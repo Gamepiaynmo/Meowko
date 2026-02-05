@@ -1,0 +1,55 @@
+# Meowko Configuration
+# Copy this file to config.yaml and fill in your API keys
+
+# LLM Settings
+llm:
+  base_url: "https://api.openai.com/v1"
+  api_key: "your-api-key-here"
+  model: "gpt-4o-mini"
+  max_tokens: 4096
+  temperature: 0.7
+
+# ElevenLabs Settings
+elevenlabs:
+  api_key: "your-api-key-here"
+  default_voice_id: "21m00Tcm4TlvDq8ikWAM"  # Rachel
+  model_id: "eleven_turbo_v2_5"
+
+# Brave Search
+brave:
+  api_key: "your-api-key-here"
+  search_count: 5
+
+# Context Settings
+context:
+  max_tokens: 8000
+  compaction_threshold: 12000
+  recent_turns: 20
+
+# Memory Settings
+memory:
+  daily_retention: 5
+  monthly_retention: 3
+  rollup_time: "03:00"
+  timezone: "Asia/Singapore"
+
+# Voice Settings
+voice:
+  endpointing_ms: 500
+  push_to_talk: false
+  sample_rate: 48000
+  channels: 2
+
+# Scheduler
+scheduler:
+  tick_interval: 60
+
+# Data Paths
+paths:
+  data_dir: "~/.meowko"
+  personas_dir: personas
+  state_dir: state
+  conversations_dir: conversations
+  memories_dir: memories
+  cache_dir: cache/attachments
+  logs_dir: logs
