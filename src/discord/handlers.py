@@ -1,11 +1,12 @@
 """Discord event handlers for messages, attachments, and interactions."""
 
 import logging
+from datetime import datetime
 
 import discord
 
 from src.core.context_builder import ContextBuilder
-from src.providers.llm_client import LLMClient
+from src.providers.llm_client import LLMClient, LLMResponse
 
 logger = logging.getLogger("meowko")
 
@@ -27,22 +28,21 @@ class MessageHandler:
         Returns:
             The assistant's response text.
         """
-        guild_id = message.guild.id if message.guild else 0
-        channel_id = message.channel.id
         user_id = message.author.id
         user_name = message.author.display_name
-        user_message = message.content
+        user_message_raw = message.content
+        persona_id = "meowko"  # Default persona for now
 
-        logger.info(f"Processing message from {user_name}: {user_message[:50]}...")
+        # Format message with timestamp and username
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+        user_message = f"[{current_time}] {user_name}: {user_message_raw}"
 
-        # Build context
+        logger.info(f"Processing message from {user_name}: {user_message_raw[:50]}...")
+
+        # Build context (includes all previous turns)
         messages = self.context_builder.build_context(
-            guild_id=guild_id,
-            channel_id=channel_id,
             user_id=user_id,
-            user_name=user_name,
-            persona_id="alice",  # Default persona for now
-            recent_turns=20,
+            persona_id=persona_id,
         )
 
         # Add current user message
@@ -50,19 +50,23 @@ class MessageHandler:
 
         # Get LLM response
         try:
-            response = await self.llm_client.chat(messages)
+            llm_response: LLMResponse = await self.llm_client.chat(messages)
         except Exception as e:
             logger.exception("Error getting LLM response")
             return f"Sorry, I encountered an error: {e}"
 
-        # Save the turn
+        # Save the turn (with formatted user message, token usage, and cost)
         self.context_builder.save_turn(
-            guild_id=guild_id,
-            channel_id=channel_id,
             user_id=user_id,
             user_message=user_message,
-            assistant_message=response,
+            assistant_message=llm_response.content,
+            persona_id=persona_id,
+            prompt_tokens=llm_response.prompt_tokens,
+            completion_tokens=llm_response.completion_tokens,
+            total_tokens=llm_response.total_tokens,
+            cached_tokens=llm_response.cached_tokens,
+            cost=llm_response.cost,
         )
 
-        logger.info(f"Response sent: {response[:50]}...")
-        return response
+        logger.info(f"Response sent: {llm_response.content[:50]}...")
+        return llm_response.content

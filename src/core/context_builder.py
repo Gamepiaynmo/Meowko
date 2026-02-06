@@ -15,7 +15,7 @@ class ContextBuilder:
         """Initialize the context builder."""
         config = get_config()
         if data_dir is None:
-            data_dir = Path(os.path.expanduser(config.paths.get("data_dir", "~/.meowko")))
+            data_dir = Path(os.path.expanduser(config.paths["data_dir"]))
         self.data_dir = data_dir
         self.store = JSONLStore(data_dir)
         self.config = config
@@ -26,7 +26,7 @@ class ContextBuilder:
         Returns:
             Tuple of (system_prompt, nickname)
         """
-        personas_dir = self.data_dir / self.config.paths.get("personas_dir", "personas")
+        personas_dir = self.data_dir / self.config.paths["personas_dir"]
         persona_dir = personas_dir / persona_id
 
         # Load soul.md (system prompt)
@@ -49,12 +49,8 @@ class ContextBuilder:
 
     def build_context(
         self,
-        guild_id: int,
-        channel_id: int,
         user_id: int,
-        user_name: str,
         persona_id: str = "alice",
-        recent_turns: int = 20,
     ) -> list[dict[str, Any]]:
         """Build the LLM context for a conversation.
 
@@ -67,10 +63,10 @@ class ContextBuilder:
         system_prompt, _ = self.load_persona(persona_id)
         messages.append({"role": "system", "content": system_prompt})
 
-        # 2. Recent conversation turns
-        recent_events = self.store.read_recent(guild_id, channel_id, user_id, n=recent_turns)
+        # 2. All previous conversation turns
+        all_events = self.store.read_all(persona_id, user_id)
 
-        for event in recent_events:
+        for event in all_events:
             role = event.get("role")
             content = event.get("content")
             if role and content:
@@ -80,19 +76,22 @@ class ContextBuilder:
 
     def save_turn(
         self,
-        guild_id: int,
-        channel_id: int,
         user_id: int,
         user_message: str,
         assistant_message: str,
+        persona_id: str = "alice",
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        cached_tokens: int = 0,
+        cost: float = 0.0,
     ) -> None:
         """Save a user-assistant turn to the conversation log."""
         timestamp = __import__("datetime").datetime.now().isoformat()
 
         # Save user message
         self.store.append(
-            guild_id,
-            channel_id,
+            persona_id,
             user_id,
             {
                 "timestamp": timestamp,
@@ -101,14 +100,20 @@ class ContextBuilder:
             },
         )
 
-        # Save assistant message
+        # Save assistant message with token usage and cost
         self.store.append(
-            guild_id,
-            channel_id,
+            persona_id,
             user_id,
             {
                 "timestamp": timestamp,
                 "role": "assistant",
                 "content": assistant_message,
+                "token_usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                    "cached_tokens": cached_tokens,
+                },
+                "cost": cost,
             },
         )

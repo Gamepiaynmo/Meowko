@@ -2,30 +2,87 @@
 
 import asyncio
 import logging
+import os
+from datetime import datetime
 from pathlib import Path
+from shutil import move
 
 from src.config import get_config
 from src.discord.client import MeowkoBot
 
 
-def setup_logging(log_level: str = "INFO") -> None:
-    """Configure logging for the bot."""
+class SingleLineFormatter(logging.Formatter):
+    """Custom formatter that only outputs the first line of each log message."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        # Get the formatted message
+        formatted = super().format(record)
+        # Split by newlines and take only the first line
+        first_line = formatted.split("\n")[0]
+        return first_line
+
+
+def setup_logging(log_file: Path | None = None, log_level: str = "INFO") -> None:
+    """Configure logging for the bot.
+
+    If a previous log file exists, it will be backed up with a timestamp
+    before starting a new empty log file.
+    """
+    formatter = SingleLineFormatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    handlers[0].setFormatter(formatter)
+
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Backup existing log file if it exists
+        if log_file.exists():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"{log_file.stem}_{timestamp}{log_file.suffix}"
+            backup_path = log_file.parent / backup_name
+            move(log_file, backup_path)
+
+        # Create new empty log file
+        file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        handlers.append(file_handler)
+
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=handlers,
     )
 
 
-async def main() -> None:
-    """Main entry point for the bot."""
-    setup_logging()
-    logger = logging.getLogger("meowko")
-    logger.info("Starting Meowko...")
+async def config_watcher(interval: int = 5) -> None:
+    """Watch for config file changes and reload if modified.
 
-    # Load configuration
+    Args:
+        interval: Seconds between checks.
+    """
+    config = get_config()
+    while True:
+        await asyncio.sleep(interval)
+        config.reload_if_changed()
+
+
+async def _main() -> None:
+    """Main entry point for the bot."""
+    # Load configuration first to get log path
     config = get_config()
     config_path = Path(__file__).parent.parent / "config.yaml"
     config.load(config_path)
+
+    # Setup logging with file
+    data_dir = Path(os.path.expanduser(config.paths["data_dir"]))
+    logs_dir = data_dir / config.paths["logs_dir"]
+    log_file = logs_dir / "meowko.log"
+    setup_logging(log_file=log_file)
+
+    logger = logging.getLogger("meowko")
+    logger.info("Starting Meowko...")
 
     # Get Discord token from config
     # Note: Discord token should be in config.yaml under discord.token
@@ -35,17 +92,29 @@ async def main() -> None:
         logger.error("Discord token not found in config.yaml. Please add 'discord.token' to your config.")
         return
 
-    # Create and run bot
+    # Create bot and config watcher tasks
     bot = MeowkoBot()
+    watcher_task = asyncio.create_task(config_watcher())
+
     try:
         await bot.start(discord_token)
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt, shutting down...")
     finally:
+        watcher_task.cancel()
+        try:
+            await watcher_task
+        except asyncio.CancelledError:
+            pass
         await bot.close()
 
     logger.info("Meowko stopped.")
 
 
+def main() -> None:
+    """Synchronous entry point for console script."""
+    asyncio.run(_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

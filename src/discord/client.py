@@ -1,10 +1,12 @@
 """Discord client setup and configuration."""
 
+import asyncio
 import logging
 
 import discord
 from discord.ext import commands
 
+from src.config import get_config
 from src.discord.handlers import MessageHandler
 
 logger = logging.getLogger("meowko")
@@ -25,6 +27,19 @@ class MeowkoBot(commands.Bot):
         )
 
         self.message_handler = MessageHandler()
+        config = get_config()
+        self.message_delay = config.discord.get("message_delay", 0.5)
+
+    async def _send_split_response(self, channel: discord.TextChannel, response: str) -> None:
+        """Split response by newlines and send as separate messages with delay."""
+        # Split by newlines and filter out empty lines
+        parts = [line.strip() for line in response.split("\n") if line.strip()]
+
+        for i, part in enumerate(parts):
+            await channel.send(part)
+            # Add delay between messages (but not after the last one)
+            if i < len(parts) - 1 and self.message_delay > 0:
+                await asyncio.sleep(self.message_delay)
 
     async def setup_hook(self) -> None:
         """Called before the bot starts."""
@@ -51,4 +66,4 @@ class MeowkoBot(commands.Bot):
         if message.guild and message.content:
             async with message.channel.typing():
                 response = await self.message_handler.handle_text_message(message)
-                await message.reply(response)
+                await self._send_split_response(message.channel, response)

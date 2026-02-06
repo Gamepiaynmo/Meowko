@@ -4,6 +4,8 @@
 # Discord Bot Token
 discord:
   token: "your-discord-bot-token-here"
+  # Delay between split messages (in seconds). Set to 0 to disable.
+  message_delay: 0.5
 
 # LLM Settings
 llm:
@@ -12,6 +14,11 @@ llm:
   model: "gpt-4o-mini"
   context_window: 262144
   max_tokens: 4096
+  # Pricing per 1M tokens (in USD). Used for cost tracking.
+  pricing:
+    input: 0.15      # $0.15 per 1M input tokens
+    cached: 0.075    # $0.075 per 1M cached input tokens
+    output: 0.60     # $0.60 per 1M output tokens
 
 # ElevenLabs Settings
 elevenlabs:
@@ -27,8 +34,7 @@ brave:
 # Context Settings
 context:
   max_tokens: 8000
-  compaction_threshold: 12000
-  recent_turns: 20
+  compaction_threshold: 0.9
 
 # Memory Settings
 memory:
