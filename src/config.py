@@ -21,6 +21,7 @@ def _get_local_timezone() -> str:
 
 # Default configuration values
 DEFAULTS: dict[str, Any] = {
+    "locale": "zh_CN.UTF-8",
     "providers": [],
     "llm": {
         "model": "openai/gpt-4o-mini",  # format: provider/model
@@ -256,6 +257,11 @@ class Config:
     @property
     def weather(self) -> dict[str, Any]:
         return self._get_with_defaults("weather")
+
+    @property
+    def locale(self) -> str:
+        """Get the configured locale."""
+        return self._data.get("locale", DEFAULTS["locale"]) if self._data else DEFAULTS["locale"]
 
 
 def get_config() -> Config:

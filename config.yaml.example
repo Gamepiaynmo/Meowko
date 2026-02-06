@@ -1,6 +1,9 @@
 # Meowko Configuration Example
 # Copy this file to config.yaml and fill in your API keys
 
+# Locale setting (affects date/time formatting)
+locale: "zh_CN.UTF-8"
+
 # Discord Bot Token
 discord:
   token: "your-discord-bot-token-here"

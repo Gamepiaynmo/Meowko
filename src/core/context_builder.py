@@ -124,10 +124,7 @@ class ContextBuilder:
             weather_str = "Unknown"
 
         # Get template from config
-        template = self.config.context.get(
-            "info_template",
-            "Today is {date}. Weather: {weather}."
-        )
+        template = self.config.context["info_template"]
 
         return template.format(date=date_str, weather=weather_str)
 

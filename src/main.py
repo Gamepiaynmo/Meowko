@@ -1,6 +1,7 @@
 """Meowko Discord Bot - Main entry point."""
 
 import asyncio
+import locale
 import logging
 import os
 from datetime import datetime
@@ -82,6 +83,14 @@ async def _main() -> None:
     setup_logging(log_file=log_file)
 
     logger = logging.getLogger("meowko")
+
+    # Set locale
+    try:
+        locale.setlocale(locale.LC_ALL, config.locale)
+        logger.info(f"Locale set to: {config.locale}")
+    except locale.Error as e:
+        logger.warning(f"Failed to set locale {config.locale}: {e}")
+
     logger.info("Starting Meowko...")
 
     # Get Discord token from config
