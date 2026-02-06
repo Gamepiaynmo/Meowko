@@ -7,18 +7,46 @@ discord:
   # Delay between split messages (in seconds). Set to 0 to disable.
   message_delay: 0.5
 
+# LLM Providers
+# Each provider has a name, base_url, api_key, and a list of models.
+# Models include context_window, max_tokens, and pricing (per 1M tokens).
+providers:
+  - name: openai
+    base_url: "https://api.openai.com/v1"
+    api_key: "your-openai-api-key-here"
+    models:
+      - name: gpt-4o-mini
+        context_window: 128000
+        max_tokens: 4096
+        pricing:
+          input: 0.15      # $0.15 per 1M input tokens
+          cached: 0.075    # $0.075 per 1M cached input tokens
+          output: 0.60     # $0.60 per 1M output tokens
+      - name: gpt-4o
+        context_window: 128000
+        max_tokens: 4096
+        pricing:
+          input: 2.50
+          cached: 1.25
+          output: 10.00
+
+  - name: xai
+    base_url: "https://api.x.ai/v1"
+    api_key: "your-xai-api-key-here"
+    models:
+      - name: grok-4-1-fast-non-reasoning
+        context_window: 2000000
+        max_tokens: 8192
+        pricing:
+          input: 0.20
+          cached: 0.05
+          output: 0.50
+
 # LLM Settings
+# Specify which model to use in format: provider/model
 llm:
-  base_url: "https://api.openai.com/v1"
-  api_key: "your-api-key-here"
-  model: "gpt-4o-mini"
-  context_window: 262144
-  max_tokens: 4096
-  # Pricing per 1M tokens (in USD). Used for cost tracking.
-  pricing:
-    input: 0.15      # $0.15 per 1M input tokens
-    cached: 0.075    # $0.075 per 1M cached input tokens
-    output: 0.60     # $0.60 per 1M output tokens
+  model: openai/gpt-4o-mini
+  timeout: 120
 
 # ElevenLabs Settings
 elevenlabs:

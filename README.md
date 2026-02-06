@@ -28,7 +28,7 @@ A multi-user, multi-persona Discord chatbot with text and voice support.
 
 4. Run the bot:
    ```bash
-   python -m src.main
+   meowko
    ```
 
 ## Project Structure

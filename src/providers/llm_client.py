@@ -33,19 +33,19 @@ class LLMClient:
     def __init__(self) -> None:
         """Initialize the LLM client with configuration."""
         config = get_config()
-        llm_config = config.llm
+        model_config = config.get_model_config()
 
         self.client = openai.AsyncOpenAI(
-            base_url=llm_config["base_url"],
-            api_key=llm_config["api_key"],
-            timeout=llm_config["timeout"],
+            base_url=model_config["base_url"],
+            api_key=model_config["api_key"],
+            timeout=model_config["timeout"],
         )
-        self.model = llm_config["model"]
-        self.max_tokens = llm_config["max_tokens"]
-        self.context_window = llm_config["context_window"]
+        self.model = model_config["model"]
+        self.max_tokens = model_config["max_tokens"]
+        self.context_window = model_config["context_window"]
 
         # Load pricing (per 1M tokens)
-        pricing = llm_config.get("pricing", {})
+        pricing = model_config.get("pricing", {})
         self.input_price = pricing.get("input", 0.0)
         self.cached_price = pricing.get("cached", 0.0)
         self.output_price = pricing.get("output", 0.0)

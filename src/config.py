@@ -12,18 +12,10 @@ logger = logging.getLogger("meowko")
 
 # Default configuration values
 DEFAULTS: dict[str, Any] = {
+    "providers": [],
     "llm": {
-        "base_url": "https://api.openai.com/v1",
-        "api_key": "",
-        "model": "gpt-4o-mini",
-        "context_window": 128000,
-        "max_tokens": 4096,
+        "model": "openai/gpt-4o-mini",  # format: provider/model
         "timeout": 120,
-        "pricing": {
-            "input": 0.0,
-            "cached": 0.0,
-            "output": 0.0,
-        },
     },
     "elevenlabs": {
         "api_key": "",
@@ -142,9 +134,77 @@ class Config:
                 return default
         return value
 
+    def get_model_config(self) -> dict[str, Any]:
+        """Get the full configuration for the current model.
+
+        Returns:
+            Dict with base_url, api_key, model, context_window,
+            max_tokens, timeout, and pricing.
+        """
+        llm_config = self.llm
+        model_ref = llm_config.get("model", "")
+
+        # Parse provider/model format
+        if "/" in model_ref:
+            provider_name, model_name = model_ref.split("/", 1)
+        else:
+            # Fallback: assume it's just a model name, use first provider
+            provider_name = None
+            model_name = model_ref
+
+        # Find the provider
+        providers = self._data.get("providers", []) if self._data else []
+        provider = None
+
+        if provider_name:
+            for p in providers:
+                if p.get("name") == provider_name:
+                    provider = p
+                    break
+
+        # If no named provider found, use first provider as fallback
+        if provider is None and providers:
+            provider = providers[0]
+
+        if provider is None:
+            raise ValueError(f"No provider found for model: {model_ref}")
+
+        # Find the model in provider's models
+        models = provider.get("models", [])
+        model_config = None
+
+        for m in models:
+            if m.get("name") == model_name:
+                model_config = m
+                break
+
+        if model_config is None:
+            raise ValueError(f"Model '{model_name}' not found in provider")
+
+        # Build complete config
+        pricing = model_config.get("pricing", {})
+
+        return {
+            "base_url": provider.get("base_url", ""),
+            "api_key": provider.get("api_key", ""),
+            "model": model_name,
+            "context_window": model_config.get("context_window", 128000),
+            "max_tokens": model_config.get("max_tokens", 4096),
+            "timeout": llm_config.get("timeout", 120),
+            "pricing": {
+                "input": pricing.get("input", 0.0),
+                "cached": pricing.get("cached", 0.0),
+                "output": pricing.get("output", 0.0),
+            },
+        }
+
     @property
     def llm(self) -> dict[str, Any]:
         return self._get_with_defaults("llm")
+
+    @property
+    def providers(self) -> list[dict[str, Any]]:
+        return self._data.get("providers", []) if self._data else []
 
     @property
     def elevenlabs(self) -> dict[str, Any]:
