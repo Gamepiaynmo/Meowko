@@ -10,6 +10,15 @@ import yaml
 logger = logging.getLogger("meowko")
 
 
+def _get_local_timezone() -> str:
+    """Get local system timezone."""
+    try:
+        import tzlocal
+        return str(tzlocal.get_localzone())
+    except Exception:
+        return "UTC"
+
+
 # Default configuration values
 DEFAULTS: dict[str, Any] = {
     "providers": [],
@@ -31,6 +40,7 @@ DEFAULTS: dict[str, Any] = {
     "context": {
         "max_tokens": 8000,
         "compaction_threshold": 0.9,
+        "info_template": "Today is {date}. Weather: {weather}.",
     },
     "memory": {
         "daily_retention": 5,
@@ -49,6 +59,11 @@ DEFAULTS: dict[str, Any] = {
     },
     "discord": {
         "message_delay": 0.5,  # Delay between split messages in seconds
+    },
+    "weather": {
+        "latitude": 39.9906,  # Default: Beijing
+        "longitude": 116.2887,
+        "timezone": _get_local_timezone(),  # Auto-detect local timezone
     },
     "paths": {
         "data_dir": "~/.meowko",
@@ -237,6 +252,10 @@ class Config:
     @property
     def discord(self) -> dict[str, Any]:
         return self._get_with_defaults("discord")
+
+    @property
+    def weather(self) -> dict[str, Any]:
+        return self._get_with_defaults("weather")
 
 
 def get_config() -> Config:

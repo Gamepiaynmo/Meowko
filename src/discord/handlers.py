@@ -40,7 +40,7 @@ class MessageHandler:
         logger.info(f"Processing message from {user_name}: {user_message_raw[:50]}...")
 
         # Build context (includes all previous turns)
-        messages = self.context_builder.build_context(
+        messages = await self.context_builder.build_context(
             user_id=user_id,
             persona_id=persona_id,
         )

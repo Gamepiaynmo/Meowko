@@ -1,11 +1,13 @@
 """Builds LLM context from persona prompt, memories, and recent turns."""
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
+from src.providers.weather import get_weather, weather_code_to_description
 
 
 class ContextBuilder:
@@ -47,7 +49,7 @@ class ContextBuilder:
 
         return system_prompt, nickname
 
-    def build_context(
+    async def build_context(
         self,
         user_id: int,
         persona_id: str = "alice",
@@ -66,6 +68,14 @@ class ContextBuilder:
         # 2. All previous conversation turns
         all_events = self.store.read_all(persona_id, user_id)
 
+        # 3. If conversation is empty, add date and weather context
+        if not all_events:
+            context_info = await self._build_context_info()
+            if context_info:
+                messages.append({"role": "system", "content": context_info})
+                # Save context info to conversation log
+                self._save_context_info(user_id, persona_id, context_info)
+
         for event in all_events:
             role = event.get("role")
             content = event.get("content")
@@ -73,6 +83,53 @@ class ContextBuilder:
                 messages.append({"role": role, "content": content})
 
         return messages
+
+    def _save_context_info(
+        self,
+        user_id: int,
+        persona_id: str,
+        context_info: str,
+    ) -> None:
+        """Save context info (date/weather) to conversation log."""
+        timestamp = datetime.now().isoformat()
+        self.store.append(
+            persona_id,
+            user_id,
+            {
+                "timestamp": timestamp,
+                "role": "system",
+                "content": context_info,
+                "type": "context_info",
+            },
+        )
+
+    async def _build_context_info(self) -> str:
+        """Build context info with current date and weather.
+
+        Returns:
+            Formatted context info string.
+        """
+        # Get current date
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d %A")
+
+        # Get weather
+        try:
+            weather = await get_weather()
+            weather_desc = weather_code_to_description(weather["weather_code"])
+            temp_max = weather["temp_max"]
+            temp_min = weather["temp_min"]
+            weather_str = f"{weather_desc}, {temp_min}°C~{temp_max}°C"
+        except Exception:
+            weather_str = "Unknown"
+
+        # Get template from config
+        template = self.config.context.get(
+            "info_template",
+            "Today is {date}. Weather: {weather}."
+        )
+
+        return template.format(date=date_str, weather=weather_str)
 
     def save_turn(
         self,

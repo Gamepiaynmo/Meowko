@@ -45,10 +45,10 @@ class LLMClient:
         self.context_window = model_config["context_window"]
 
         # Load pricing (per 1M tokens)
-        pricing = model_config.get("pricing", {})
-        self.input_price = pricing.get("input", 0.0)
-        self.cached_price = pricing.get("cached", 0.0)
-        self.output_price = pricing.get("output", 0.0)
+        pricing = model_config["pricing"]
+        self.input_price = pricing["input"]
+        self.cached_price = pricing["cached"]
+        self.output_price = pricing["output"]
 
     async def chat(
         self,

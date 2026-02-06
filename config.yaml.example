@@ -63,6 +63,9 @@ brave:
 context:
   max_tokens: 8000
   compaction_threshold: 0.9
+  # Template for date/weather info on empty conversations
+  # Available variables: {date}, {weather}
+  info_template: "Today is {date}. Weather: {weather}."
 
 # Memory Settings
 memory:
@@ -81,6 +84,13 @@ voice:
 # Scheduler
 scheduler:
   tick_interval: 60
+
+# Weather Settings
+# Configure location for weather API. Timezone auto-detected from system if not set.
+weather:
+  latitude: 39.9906    # Default: Beijing
+  longitude: 116.2887
+  # timezone: "Asia/Singapore"  # Optional: auto-detected from system if not set
 
 # Data Paths
 paths:

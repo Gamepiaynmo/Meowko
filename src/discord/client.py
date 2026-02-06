@@ -28,7 +28,7 @@ class MeowkoBot(commands.Bot):
 
         self.message_handler = MessageHandler()
         config = get_config()
-        self.message_delay = config.discord.get("message_delay", 0.5)
+        self.message_delay = config.discord["message_delay"]
 
     async def _send_split_response(self, channel: discord.TextChannel, response: str) -> None:
         """Split response by newlines and send as separate messages with delay."""
