@@ -1,6 +1,8 @@
 """Builds LLM context from persona prompt, memories, and recent turns."""
 
+import logging
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -8,6 +10,8 @@ from typing import Any
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
 from src.providers.weather import get_weather, weather_code_to_description
+
+logger = logging.getLogger("meowko")
 
 
 class ContextBuilder:
@@ -61,9 +65,11 @@ class ContextBuilder:
         """
         messages = []
 
-        # 1. System prompt from persona
-        system_prompt, _ = self.load_persona(persona_id)
-        messages.append({"role": "system", "content": system_prompt})
+        # 1. Shared prompts + persona system prompt (single system message)
+        system_parts = self._load_shared_prompts()
+        persona_prompt, _ = self.load_persona(persona_id)
+        system_parts.append(persona_prompt)
+        messages.append({"role": "system", "content": "\n\n".join(system_parts)})
 
         # 2. All previous conversation turns
         all_events = self.store.read_all(persona_id, user_id)
@@ -103,6 +109,22 @@ class ContextBuilder:
             },
         )
 
+    def _load_shared_prompts(self) -> list[str]:
+        """Load shared system prompt files listed in config.prompts."""
+        names = self.config.get("prompts", [])
+        if not names:
+            return []
+
+        prompts_dir = self.data_dir / "prompts"
+        results = []
+        for name in names:
+            path = prompts_dir / name
+            if path.exists():
+                results.append(path.read_text(encoding="utf-8"))
+            else:
+                logger.warning("Shared prompt not found: %s", path)
+        return results
+
     async def _build_context_info(self) -> str:
         """Build context info with current date and weather.
 
@@ -128,6 +150,33 @@ class ContextBuilder:
 
         return template.format(date=date_str, weather=weather_str)
 
+    def save_cache_file(
+        self,
+        persona_id: str,
+        user_id: int,
+        filename: str,
+        data: bytes,
+    ) -> str:
+        """Save bytes to the cache directory and return the relative path.
+
+        Path format: cache/{persona_id}-{user_id}/{date}/{short_uuid}_{filename}
+
+        Returns:
+            Path relative to data_dir (e.g. "cache/meowko-123/2026-02-07/a1b2_photo.jpg").
+        """
+        cache_dir = self.config.paths["cache_dir"]
+        scope = f"{persona_id}-{user_id}"
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        short_id = uuid.uuid4().hex[:8]
+        rel = Path(cache_dir) / scope / date_str / f"{short_id}_{filename}"
+
+        abs_path = self.data_dir / rel
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_path.write_bytes(data)
+
+        logger.debug("Cached %d bytes → %s", len(data), rel)
+        return str(rel)
+
     def save_turn(
         self,
         user_id: int,
@@ -139,35 +188,37 @@ class ContextBuilder:
         total_tokens: int = 0,
         cached_tokens: int = 0,
         cost: float = 0.0,
+        user_attachments: list[dict[str, str]] | None = None,
+        assistant_attachments: list[dict[str, str]] | None = None,
     ) -> None:
         """Save a user-assistant turn to the conversation log."""
         timestamp = datetime.now().isoformat()
 
         # Save user message
-        self.store.append(
-            persona_id,
-            user_id,
-            {
-                "timestamp": timestamp,
-                "role": "user",
-                "content": user_message,
-            },
-        )
+        user_event: dict[str, Any] = {
+            "timestamp": timestamp,
+            "role": "user",
+            "content": user_message,
+        }
+        if user_attachments:
+            user_event["attachments"] = user_attachments
+
+        self.store.append(persona_id, user_id, user_event)
 
         # Save assistant message with token usage and cost
-        self.store.append(
-            persona_id,
-            user_id,
-            {
-                "timestamp": timestamp,
-                "role": "assistant",
-                "content": assistant_message,
-                "token_usage": {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": total_tokens,
-                    "cached_tokens": cached_tokens,
-                },
-                "cost": cost,
+        assistant_event: dict[str, Any] = {
+            "timestamp": timestamp,
+            "role": "assistant",
+            "content": assistant_message,
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "cached_tokens": cached_tokens,
             },
-        )
+            "cost": cost,
+        }
+        if assistant_attachments:
+            assistant_event["attachments"] = assistant_attachments
+
+        self.store.append(persona_id, user_id, assistant_event)

@@ -10,6 +10,12 @@ discord:
   # Delay between split messages (in seconds). Set to 0 to disable.
   message_delay: 0.5
 
+# Shared System Prompts
+# Markdown files under data_dir/prompts/, prepended to all persona prompts.
+prompts:
+  # - "rules.md"
+  # - "style.md"
+
 # LLM Providers
 # Each provider has a name, base_url, api_key, and a list of models.
 # Models include context_window, max_tokens, and pricing (per 1M tokens).
@@ -51,11 +57,25 @@ llm:
   model: openai/gpt-4o-mini
   timeout: 120
 
+# Text-to-Image Settings
+# Model format: provider/model (uses the same providers list above).
+# Leave model empty to disable TTI.
+# api: "images" uses /v1/images/generations (DALL-E, etc.)
+#      "chat"   uses /v1/chat/completions  (GPT-4o image gen, etc.)
+tti:
+  model: "openai/dall-e-3"
+  api: "images"
+  # size: "1024x1024"  # Optional: omit for providers that don't support it
+  # quality: "auto"    # Optional: omit for providers that don't support it
+  timeout: 120
+
 # ElevenLabs Settings
 elevenlabs:
   api_key: "your-api-key-here"
   default_voice_id: "21m00Tcm4TlvDq8ikWAM"  # Rachel
-  model_id: "eleven_turbo_v2_5"
+  model_id: "eleven_turbo_v2_5"  # TTS model
+  stt_model: "scribe_v2"         # STT model
+  # language: "en"  # Optional: auto-detected if empty
 
 # Brave Search
 brave:

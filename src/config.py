@@ -22,16 +22,25 @@ def _get_local_timezone() -> str:
 # Default configuration values
 DEFAULTS: dict[str, Any] = {
     "locale": "zh_CN.UTF-8",
+    "prompts": [],
     "providers": [],
     "llm": {
         "model": "openai/gpt-4o-mini",  # format: provider/model
+        "timeout": 120,
+    },
+    "tti": {
+        "model": "",  # format: provider/model (empty = disabled)
+        "api": "images",  # "images" = /v1/images/generations, "chat" = /v1/chat/completions
+        "size": "",  # e.g. "1024x1024" (omitted if empty — not all providers support it)
+        "quality": "",  # e.g. "auto", "hd" (omitted if empty)
         "timeout": 120,
     },
     "elevenlabs": {
         "api_key": "",
         "default_voice_id": "21m00Tcm4TlvDq8ikWAM",
         "model_id": "eleven_turbo_v2_5",
-        "language": "en",
+        "stt_model": "scribe_v2",
+        "language": "",
         "timeout": 120,
     },
     "brave": {
@@ -150,21 +159,20 @@ class Config:
                 return default
         return value
 
-    def get_model_config(self) -> dict[str, Any]:
-        """Get the full configuration for the current model.
+    def resolve_provider_model(self, model_ref: str) -> dict[str, Any]:
+        """Resolve a 'provider/model' reference to provider + model config.
 
         Returns:
-            Dict with base_url, api_key, model, context_window,
-            max_tokens, timeout, and pricing.
-        """
-        llm_config = self.llm
-        model_ref = llm_config.get("model", "")
+            Dict with base_url, api_key, model (name), and the raw
+            model config dict from the provider's models list.
 
+        Raises:
+            ValueError: If provider or model cannot be found.
+        """
         # Parse provider/model format
         if "/" in model_ref:
             provider_name, model_name = model_ref.split("/", 1)
         else:
-            # Fallback: assume it's just a model name, use first provider
             provider_name = None
             model_name = model_ref
 
@@ -178,34 +186,50 @@ class Config:
                     provider = p
                     break
 
-        # If no named provider found, use first provider as fallback
         if provider is None and providers:
             provider = providers[0]
 
         if provider is None:
             raise ValueError(f"No provider found for model: {model_ref}")
 
-        # Find the model in provider's models
+        # Find the model in provider's models list (optional for non-LLM uses)
         models = provider.get("models", [])
-        model_config = None
-
+        model_config: dict[str, Any] = {}
         for m in models:
             if m.get("name") == model_name:
                 model_config = m
                 break
 
-        if model_config is None:
-            raise ValueError(f"Model '{model_name}' not found in provider")
-
-        # Build complete config
-        pricing = model_config.get("pricing", {})
-
         return {
             "base_url": provider.get("base_url", ""),
             "api_key": provider.get("api_key", ""),
             "model": model_name,
-            "context_window": model_config.get("context_window", 128000),
-            "max_tokens": model_config.get("max_tokens", 4096),
+            "model_config": model_config,
+        }
+
+    def get_model_config(self) -> dict[str, Any]:
+        """Get the full configuration for the current LLM model.
+
+        Returns:
+            Dict with base_url, api_key, model, context_window,
+            max_tokens, timeout, and pricing.
+        """
+        llm_config = self.llm
+        model_ref = llm_config.get("model", "")
+        resolved = self.resolve_provider_model(model_ref)
+        mc = resolved["model_config"]
+
+        if not mc:
+            raise ValueError(f"Model '{resolved['model']}' not found in provider")
+
+        pricing = mc.get("pricing", {})
+
+        return {
+            "base_url": resolved["base_url"],
+            "api_key": resolved["api_key"],
+            "model": resolved["model"],
+            "context_window": mc.get("context_window", 128000),
+            "max_tokens": mc.get("max_tokens", 4096),
             "timeout": llm_config.get("timeout", 120),
             "pricing": {
                 "input": pricing.get("input", 0.0),
@@ -217,6 +241,10 @@ class Config:
     @property
     def llm(self) -> dict[str, Any]:
         return self._get_with_defaults("llm")
+
+    @property
+    def tti(self) -> dict[str, Any]:
+        return self._get_with_defaults("tti")
 
     @property
     def providers(self) -> list[dict[str, Any]]:
