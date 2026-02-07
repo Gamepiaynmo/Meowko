@@ -1,9 +1,9 @@
 """Audio processing utilities for voice streaming."""
 
 import io
-import struct
 import threading
 import wave
+from array import array
 
 import discord
 
@@ -19,26 +19,24 @@ class AudioResampler:
         Stereo→mono by averaging channels.
         3840 bytes in → 1920 bytes out.
         """
-        samples = struct.unpack(f"<{len(pcm_48k_stereo) // 2}h", pcm_48k_stereo)
-        # Average stereo pairs to mono
-        mono = []
-        for i in range(0, len(samples), 2):
-            mono.append((samples[i] + samples[i + 1]) // 2)
-        return struct.pack(f"<{len(mono)}h", *mono)
+        samples = array("h", pcm_48k_stereo)
+        mono = array("h", (
+            (samples[i] + samples[i + 1]) // 2
+            for i in range(0, len(samples), 2)
+        ))
+        return mono.tobytes()
 
     @staticmethod
     def tts_to_discord(pcm_48k_mono: bytes) -> bytes:
         """Convert TTS audio to Discord format.
 
         48kHz mono (1ch, 16-bit) → 48kHz stereo (2ch, 16-bit).
-        Mono→stereo by duplicating channels.
+        Mono→stereo by duplicating each sample for L+R.
         2x expansion.
         """
-        samples = struct.unpack(f"<{len(pcm_48k_mono) // 2}h", pcm_48k_mono)
-        out = []
-        for s in samples:
-            out.extend([s, s])
-        return struct.pack(f"<{len(out)}h", *out)
+        samples = array("h", pcm_48k_mono)
+        stereo = array("h", (s for sample in samples for s in (sample, sample)))
+        return stereo.tobytes()
 
 
     @staticmethod

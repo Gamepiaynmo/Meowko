@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import re
 from typing import Any
 
 import openai
@@ -140,15 +141,8 @@ def _decode_data_url(text: str) -> bytes | None:
     idx = text.find(marker)
     if idx == -1:
         return None
-    b64 = text[idx + len(marker):]
-    # Trim any trailing non-base64 characters (quotes, brackets, etc.)
-    end = 0
-    for end, ch in enumerate(b64):
-        if ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r":
-            break
-    else:
-        end = len(b64)
-    b64 = b64[:end]
-    if not b64:
+    b64_start = text[idx + len(marker):]
+    m = re.match(r"[A-Za-z0-9+/=\n\r]+", b64_start)
+    if not m:
         return None
-    return base64.b64decode(b64)
+    return base64.b64decode(m.group())

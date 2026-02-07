@@ -69,12 +69,18 @@ tti:
   # quality: "auto"    # Optional: omit for providers that don't support it
   timeout: 120
 
-# ElevenLabs Settings
+# Soniox STT Settings
+soniox:
+  api_key: "your-soniox-api-key-here"
+  model: "stt-async-preview"          # Batch STT model
+  streaming_model: "stt-rt-preview"   # Realtime STT model
+  # language_hints: ["en"]  # Optional: auto-detected if empty
+
+# ElevenLabs Settings (TTS only)
 elevenlabs:
   api_key: "your-api-key-here"
   default_voice_id: "21m00Tcm4TlvDq8ikWAM"  # Rachel
-  model_id: "eleven_turbo_v2_5"  # TTS model
-  stt_model: "scribe_v2"         # STT model
+  model_id: "eleven_turbo_v2_5"
   # language: "en"  # Optional: auto-detected if empty
 
 # Brave Search

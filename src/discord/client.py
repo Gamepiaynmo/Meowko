@@ -111,20 +111,12 @@ class MeowkoBot(commands.Bot):
         if message.author.bot:
             return
 
-        await self.process_commands(message)
+        ctx = await self.get_context(message)
+        if ctx.valid:
+            await self.invoke(ctx)
+            return
 
-        # Classify attachments
-        has_images = False
-        has_audio = False
-        for a in message.attachments:
-            ct = a.content_type or ""
-            base = ct.split(";")[0].strip()
-            if base.startswith("image/"):
-                has_images = True
-            elif base.startswith("audio/") or base in ("video/mp4", "video/webm"):
-                has_audio = True
-
-        if message.guild and (message.content or has_images or has_audio):
+        if message.guild and (message.content or message.attachments):
             try:
                 async with message.channel.typing():
                     segments = await self.message_handler.handle_message(message)

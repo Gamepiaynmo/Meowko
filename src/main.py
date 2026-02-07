@@ -82,7 +82,7 @@ async def _main() -> None:
     data_dir = config.data_dir
     logs_dir = data_dir / config.paths["logs_dir"]
     log_file = logs_dir / "meowko.log"
-    setup_logging(log_file=log_file)
+    setup_logging(log_file=log_file, log_level="INFO")
 
     logger = logging.getLogger("meowko")
 

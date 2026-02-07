@@ -3,8 +3,8 @@
 Data flow:
   Discord Voice (48kHz stereo PCM, 20ms frames)
     → per-user routing via BasicSink callback
-    → AudioResampler.discord_to_stt() (48kHz stereo → 16kHz mono)
-    → ElevenLabsStreamingSTT WebSocket (VAD-based endpointing)
+    → AudioResampler.discord_to_stt() (48kHz stereo → 48kHz mono)
+    → SonioxStreamingSTT WebSocket (client-side silence → end stream)
     → committed transcript
     → ContextBuilder.build_context() + LLMClient.chat() (non-streaming)
     → ElevenLabsStreamingTTS REST stream (pcm_48000)
@@ -15,16 +15,17 @@ Data flow:
 import asyncio
 import logging
 import re
+import time
 
 import discord
-import yaml
 from discord.ext.voice_recv import BasicSink, VoiceRecvClient
 
 from src.config import get_config
 from src.core.context_builder import ContextBuilder
 from src.discord.handlers import format_user_message
 from src.media.audio import AudioResampler, PCMStreamSource
-from src.providers.elevenlabs import ElevenLabsStreamingSTT, ElevenLabsStreamingTTS
+from src.providers.elevenlabs import ElevenLabsStreamingTTS
+from src.providers.soniox import SonioxStreamingSTT
 from src.providers.llm_client import LLMClient
 
 logger = logging.getLogger("meowko")
@@ -44,15 +45,18 @@ class UserAudioStream:
     ) -> None:
         self.user = user
         self.session = session
-        self._stt: ElevenLabsStreamingSTT | None = None
+        self._stt: SonioxStreamingSTT | None = None
         self._silence_task: asyncio.Task[None] | None = None
         self._connecting = False
         self._connected_event = asyncio.Event()
         self._audio_buffer: list[bytes] = []
+        self._audio_buffer_bytes = 0
+        self._pending_tasks: set[asyncio.Task] = set()
 
         config = get_config()
         self._endpointing_secs = config.voice.get("endpointing_ms", 500) / 1000.0
-        self._audio_bytes_since_commit = 0
+        # Cap buffer at ~2s of 48kHz mono 16-bit audio (192000 bytes)
+        self._max_buffer_bytes = 192000
 
     async def ensure_connected(self) -> None:
         """Lazy-connect (or reconnect) the STT WebSocket."""
@@ -73,7 +77,7 @@ class UserAudioStream:
             await self._connected_event.wait()
             return
         self._connecting = True
-        self._stt = ElevenLabsStreamingSTT(
+        self._stt = SonioxStreamingSTT(
             on_committed=self._on_committed,
         )
         await self._stt.connect()
@@ -81,30 +85,29 @@ class UserAudioStream:
         self._connecting = False
         logger.info("STT stream connected for user %s", self.user.display_name)
 
-        # Reset byte counter — only count audio sent to the new session
-        self._audio_bytes_since_commit = sum(len(c) for c in self._audio_buffer)
-
         # Flush any audio buffered during connection
         for chunk in self._audio_buffer:
             await self._stt.send_audio(chunk)
         self._audio_buffer.clear()
+        self._audio_buffer_bytes = 0
 
     async def feed_audio(self, pcm_48k_stereo: bytes) -> None:
         """Resample and send audio to STT. Also check for barge-in."""
-        # Barge-in: if bot is currently playing, interrupt
+        # Barge-in: interrupt playback once, not on every frame
         if self.session.is_playing():
             self.session.interrupt_playback()
 
-        pcm_16k_mono = AudioResampler.discord_to_stt(pcm_48k_stereo)
-        self._audio_bytes_since_commit += len(pcm_16k_mono)
+        pcm_48k_mono = AudioResampler.discord_to_stt(pcm_48k_stereo)
 
         # Reconnect if the STT WebSocket dropped
         if self._connected_event.is_set() and (not self._stt or not self._stt._connected):
             await self.ensure_connected()
 
         if not self._connected_event.is_set():
-            # Buffer audio while connecting
-            self._audio_buffer.append(pcm_16k_mono)
+            # Buffer audio while connecting (with cap)
+            if self._audio_buffer_bytes < self._max_buffer_bytes:
+                self._audio_buffer.append(pcm_48k_mono)
+                self._audio_buffer_bytes += len(pcm_48k_mono)
             # Kick off connection if not started
             if not self._connecting:
                 asyncio.create_task(self.ensure_connected())
@@ -112,31 +115,21 @@ class UserAudioStream:
             return
 
         assert self._stt is not None
-        await self._stt.send_audio(pcm_16k_mono)
+        await self._stt.send_audio(pcm_48k_mono)
         self._reset_silence_timer()
 
     def _reset_silence_timer(self) -> None:
-        """Reset the silence timer — commit after endpointing_ms of no audio."""
+        """Reset the silence timer — end stream after endpointing_ms of no audio."""
         if self._silence_task and not self._silence_task.done():
             self._silence_task.cancel()
         self._silence_task = asyncio.create_task(self._silence_timeout())
 
-    # ElevenLabs requires at least 0.3s of uncommitted audio to commit.
-    # 0.3s at 48kHz 16-bit mono = 28800 bytes.
-    _MIN_AUDIO_FOR_COMMIT = 28800
-
     async def _silence_timeout(self) -> None:
-        """Wait for silence duration, then commit."""
+        """Wait for silence duration, then end the stream to finalise the transcript."""
         try:
             await asyncio.sleep(self._endpointing_secs)
-            if not self._stt or self._audio_bytes_since_commit == 0:
-                return
-            # Pad only the difference to meet ElevenLabs' 0.3s minimum
-            if self._audio_bytes_since_commit < self._MIN_AUDIO_FOR_COMMIT:
-                pad = self._MIN_AUDIO_FOR_COMMIT - self._audio_bytes_since_commit
-                await self._stt.send_audio(b"\x00" * pad)
-            self._audio_bytes_since_commit = 0
-            await self._stt.commit()
+            if self._stt and self._stt._connected:
+                await self._stt.end_stream()
         except asyncio.CancelledError:
             pass
 
@@ -146,7 +139,9 @@ class UserAudioStream:
         Launched as a task so it doesn't block the STT receive loop.
         """
         logger.info("STT committed [%s]: %s", self.user.display_name, text)
-        asyncio.create_task(self._handle_committed(text))
+        task = asyncio.create_task(self._handle_committed(text))
+        self._pending_tasks.add(task)
+        task.add_done_callback(self._pending_tasks.discard)
 
     async def _handle_committed(self, text: str) -> None:
         try:
@@ -155,9 +150,13 @@ class UserAudioStream:
             logger.error("Error handling transcript: %r", e)
 
     async def close(self) -> None:
-        """Tear down the STT WebSocket."""
+        """Tear down the STT WebSocket and cancel pending tasks."""
         if self._silence_task and not self._silence_task.done():
             self._silence_task.cancel()
+        for task in self._pending_tasks:
+            if not task.done():
+                task.cancel()
+        self._pending_tasks.clear()
         if self._stt:
             await self._stt.close()
             self._stt = None
@@ -173,10 +172,14 @@ class VoiceSession:
         self._processing_lock = asyncio.Lock()
         self._current_source: PCMStreamSource | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._health_task: asyncio.Task | None = None
+        self._last_frame_time: float = 0.0
 
         self._context_builder = ContextBuilder()
         self._llm_client = LLMClient()
         self._persona_id = "meowko"
+        persona = self._context_builder.load_persona(self._persona_id)
+        self._voice_id: str | None = persona["voice_id"]
 
     async def join(self, channel: discord.VoiceChannel) -> None:
         """Connect to a voice channel and start listening."""
@@ -185,6 +188,7 @@ class VoiceSession:
 
         self._frame_count = 0
         self._start_listening()
+        self._health_task = asyncio.create_task(self._health_monitor())
         logger.info("Joined voice channel: %s (guild: %s)", channel.name, self.guild.name)
 
     def _start_listening(self) -> None:
@@ -195,6 +199,7 @@ class VoiceSession:
         def on_audio(user: discord.User | None, data: discord.ext.voice_recv.VoiceData) -> None:
             if user is None or user.bot:
                 return
+            self._last_frame_time = time.monotonic()
             self._frame_count += 1
             if self._frame_count % 50 == 1:
                 logger.info("Voice frame %d from %s (%d bytes)", self._frame_count, user, len(data.pcm))
@@ -205,9 +210,13 @@ class VoiceSession:
 
         self.voice_client.stop_listening()
         self.voice_client.listen(BasicSink(on_audio))
+        logger.info("Voice listener started (guild: %s)", self.guild.name)
 
     async def leave(self) -> None:
         """Close all user streams and disconnect from voice."""
+        if self._health_task and not self._health_task.done():
+            self._health_task.cancel()
+            self._health_task = None
         for stream in self._user_streams.values():
             await stream.close()
         self._user_streams.clear()
@@ -235,9 +244,11 @@ class VoiceSession:
         )
 
     def interrupt_playback(self) -> None:
-        """Barge-in — stop current playback immediately."""
-        if self._current_source:
-            self._current_source.interrupt()
+        """Barge-in — stop current playback immediately (idempotent)."""
+        if not self._current_source:
+            return
+        self._current_source.interrupt()
+        self._current_source = None
         if self.voice_client and self.voice_client.is_playing():
             self.voice_client.stop()
         logger.debug("Playback interrupted (barge-in)")
@@ -314,7 +325,7 @@ class VoiceSession:
         source = PCMStreamSource()
         self._current_source = source
 
-        voice_id = self._get_persona_voice_id()
+        voice_id = self._voice_id
 
         raw_pcm_chunks: list[bytes] = []
 
@@ -343,6 +354,7 @@ class VoiceSession:
             logger.error("Streaming TTS error: %r", e)
         finally:
             source.finish()
+            await tts.close()
 
         # Wait for playback to drain the buffer
         await playback_done.wait()
@@ -369,6 +381,44 @@ class VoiceSession:
             except Exception:
                 logger.debug("Failed to refresh reader secret key", exc_info=True)
 
+    async def _health_monitor(self) -> None:
+        """Periodically check voice receive pipeline health."""
+        try:
+            while True:
+                await asyncio.sleep(30)
+                self._health_check()
+        except asyncio.CancelledError:
+            pass
+
+    def _health_check(self) -> None:
+        """Single health check cycle: verify reader, refresh key, log status."""
+        vc = self.voice_client
+        if not vc or not vc.is_connected():
+            return
+
+        # Check if the reader is alive — if MISSING or not listening, restart
+        reader = getattr(vc, '_reader', None)
+        if not reader or reader == "MISSING":
+            logger.warning("Voice reader is missing, restarting listener (guild: %s)", self.guild.name)
+            self._start_listening()
+        elif not getattr(reader, '_listening', True):
+            logger.warning("Voice reader is not listening, restarting listener (guild: %s)", self.guild.name)
+            self._start_listening()
+
+        # Proactively refresh the decryptor's secret key
+        self._refresh_reader_key()
+
+        # Warn if no audio frames received for a long time
+        if self._last_frame_time > 0:
+            silence = time.monotonic() - self._last_frame_time
+            if silence > 120:
+                logger.warning(
+                    "No audio frames for %.0fs (guild: %s)",
+                    silence, self.guild.name,
+                )
+
+        logger.debug("Health check OK (guild: %s)", self.guild.name)
+
     @staticmethod
     def _strip_tags(text: str) -> str:
         """Remove [tti]...[/tti] blocks entirely, strip [tts]/[/tts] tags keeping content."""
@@ -378,17 +428,6 @@ class VoiceSession:
         text = _TTS_TAG_RE.sub("", text)
         return text.strip()
 
-    def _get_persona_voice_id(self) -> str | None:
-        """Read persona.yaml for voice_id override, if it exists."""
-        config = get_config()
-        persona_yaml = config.data_dir / config.paths["personas_dir"] / self._persona_id / "persona.yaml"
-        if persona_yaml.exists():
-            with open(persona_yaml, encoding="utf-8") as f:
-                persona_config = yaml.safe_load(f)
-            voice_id = persona_config.get("voice_id")
-            if voice_id:
-                return voice_id
-        return None
 
 
 class VoiceSessionManager:

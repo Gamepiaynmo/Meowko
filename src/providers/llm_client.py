@@ -83,7 +83,7 @@ class LLMClient:
         # Check for cached tokens (OpenAI API v2+ provides this)
         cached_tokens = 0
         if usage and hasattr(usage, 'prompt_tokens_details') and usage.prompt_tokens_details:
-            cached_tokens = getattr(usage.prompt_tokens_details, 'cached_tokens', 0)
+            cached_tokens = getattr(usage.prompt_tokens_details, 'cached_tokens', 0) or 0
 
         # Calculate cost (prices are per 1M tokens)
         non_cached_input = prompt_tokens - cached_tokens

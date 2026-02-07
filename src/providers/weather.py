@@ -4,6 +4,22 @@ import aiohttp
 
 from src.config import get_config
 
+_session: aiohttp.ClientSession | None = None
+
+
+async def _get_session() -> aiohttp.ClientSession:
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession()
+    return _session
+
+
+async def close_session() -> None:
+    global _session
+    if _session and not _session.closed:
+        await _session.close()
+        _session = None
+
 
 async def get_weather() -> dict[str, str]:
     """Fetch current weather from Open-Meteo API.
@@ -25,15 +41,15 @@ async def get_weather() -> dict[str, str]:
         f"&timezone={timezone}&forecast_days=1"
     )
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            data = await response.json()
-            daily = data.get("daily", {})
-            return {
-                "weather_code": str(daily.get("weather_code", [""])[0]),
-                "temp_max": str(daily.get("temperature_2m_max", [""])[0]),
-                "temp_min": str(daily.get("temperature_2m_min", [""])[0]),
-            }
+    session = await _get_session()
+    async with session.get(url) as response:
+        data = await response.json()
+        daily = data.get("daily", {})
+        return {
+            "weather_code": str(daily.get("weather_code", [""])[0]),
+            "temp_max": str(daily.get("temperature_2m_max", [""])[0]),
+            "temp_min": str(daily.get("temperature_2m_min", [""])[0]),
+        }
 
 
 def weather_code_to_description(code: str) -> str:

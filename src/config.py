@@ -39,17 +39,22 @@ DEFAULTS: dict[str, Any] = {
         "api_key": "",
         "default_voice_id": "21m00Tcm4TlvDq8ikWAM",
         "model_id": "eleven_turbo_v2_5",
-        "stt_model": "scribe_v2",
         "language": "",
         "timeout": 120,
         "voice_settings": {},
+    },
+    "soniox": {
+        "api_key": "",
+        "model": "stt-async-preview",
+        "streaming_model": "stt-rt-preview",
+        "language_hints": [],
+        "timeout": 120,
     },
     "brave": {
         "api_key": "",
         "search_count": 5,
     },
     "context": {
-        "max_tokens": 8000,
         "compaction_threshold": 0.9,
         "info_template": "Today is {date}. Weather: {weather}.",
     },
@@ -254,6 +259,10 @@ class Config:
     @property
     def elevenlabs(self) -> dict[str, Any]:
         return self._get_with_defaults("elevenlabs")
+
+    @property
+    def soniox(self) -> dict[str, Any]:
+        return self._get_with_defaults("soniox")
 
     @property
     def brave(self) -> dict[str, Any]:

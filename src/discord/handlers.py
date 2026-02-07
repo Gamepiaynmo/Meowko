@@ -12,7 +12,8 @@ import discord
 
 from src.config import get_config
 from src.core.context_builder import ContextBuilder
-from src.providers.elevenlabs import ElevenLabsSTT, ElevenLabsTTS
+from src.providers.elevenlabs import ElevenLabsTTS
+from src.providers.soniox import SonioxSTT
 from src.providers.llm_client import LLMClient, LLMResponse
 
 logger = logging.getLogger("meowko")
@@ -28,7 +29,7 @@ SUPPORTED_AUDIO_TYPES = {
     "audio/mpeg", "audio/mp3", "audio/mp4", "audio/m4a",
     "audio/wav", "audio/x-wav", "audio/ogg", "audio/flac",
     "audio/webm", "audio/aac",
-    "video/mp4", "video/webm",  # ElevenLabs accepts video too
+    "video/mp4", "video/webm",
 }
 
 # Matches [tts]...[/tts] and [tti]...[/tti] blocks, preserving order.
@@ -54,7 +55,7 @@ class MessageHandler:
         """Initialize the message handler."""
         self.context_builder = ContextBuilder()
         self.llm_client = LLMClient()
-        self.stt = ElevenLabsSTT()
+        self.stt = SonioxSTT()
         self.tts = ElevenLabsTTS()
         self._tti: "ImageGenClient | None" = None
         self._tti_init = False
@@ -357,7 +358,7 @@ class MessageHandler:
     async def _transcribe_audio(
         self, attachments: list[discord.Attachment]
     ) -> list[dict[str, Any]]:
-        """Transcribe supported audio attachments via ElevenLabs STT."""
+        """Transcribe supported audio attachments via Soniox STT."""
         transcripts = []
         for attachment in attachments:
             media_type = attachment.content_type
@@ -369,13 +370,9 @@ class MessageHandler:
                 continue
 
             try:
-                audio_bytes = await attachment.read()
-                text = await self.stt.transcribe(
-                    audio_bytes,
-                    filename=attachment.filename,
-                    content_type=base_type,
-                )
+                text = await self.stt.transcribe(attachment.url)
                 if text:
+                    audio_bytes = await attachment.read()
                     transcripts.append({
                         "filename": attachment.filename,
                         "text": text,

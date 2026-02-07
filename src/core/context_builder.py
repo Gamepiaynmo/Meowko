@@ -27,11 +27,11 @@ class ContextBuilder:
         self.store = JSONLStore(data_dir)
         self.config = config
 
-    def load_persona(self, persona_id: str) -> tuple[str, str]:
-        """Load persona system prompt and nickname.
+    def load_persona(self, persona_id: str) -> dict[str, str | None]:
+        """Load persona system prompt, nickname, and voice_id.
 
         Returns:
-            Tuple of (system_prompt, nickname)
+            Dict with keys: prompt, nickname, voice_id.
         """
         personas_dir = self.data_dir / self.config.paths["personas_dir"]
         persona_dir = personas_dir / persona_id
@@ -43,15 +43,17 @@ class ContextBuilder:
         else:
             system_prompt = f"You are {persona_id}, a helpful assistant."
 
-        # Load persona.yaml for nickname
+        # Load persona.yaml for nickname and voice_id
         persona_yaml_path = persona_dir / "persona.yaml"
         nickname = persona_id
+        voice_id = None
         if persona_yaml_path.exists():
             with open(persona_yaml_path, encoding="utf-8") as f:
                 persona_config = yaml.safe_load(f)
             nickname = persona_config.get("nickname", persona_id)
+            voice_id = persona_config.get("voice_id")
 
-        return system_prompt, nickname
+        return {"prompt": system_prompt, "nickname": nickname, "voice_id": voice_id}
 
     async def build_context(
         self,
@@ -67,8 +69,8 @@ class ContextBuilder:
 
         # 1. Shared prompts + persona system prompt (single system message)
         system_parts = self._load_shared_prompts()
-        persona_prompt, _ = self.load_persona(persona_id)
-        system_parts.append(persona_prompt)
+        persona = self.load_persona(persona_id)
+        system_parts.append(persona["prompt"])
         messages.append({"role": "system", "content": "\n\n".join(system_parts)})
 
         # 2. All previous conversation turns
@@ -159,16 +161,19 @@ class ContextBuilder:
     ) -> str:
         """Save bytes to the cache directory and return the relative path.
 
-        Path format: cache/{persona_id}-{user_id}/{date}/{short_uuid}_{filename}
+        Path format: cache/{persona_id}-{user_id}/{date}/{HH-MM-SS}-{uuid}.{ext}
 
         Returns:
-            Path relative to data_dir (e.g. "cache/meowko-123/2026-02-07/a1b2_photo.jpg").
+            Path relative to data_dir (e.g. "cache/meowko-123/2026-02-07/14-30-52-a1b2c3d4.jpg").
         """
         cache_dir = self.config.paths["cache_dir"]
         scope = f"{persona_id}-{user_id}"
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H-%M-%S")
         short_id = uuid.uuid4().hex[:8]
-        rel = Path(cache_dir) / scope / date_str / f"{short_id}_{filename}"
+        ext = Path(filename).suffix
+        rel = Path(cache_dir) / scope / date_str / f"{time_str}-{short_id}{ext}"
 
         abs_path = self.data_dir / rel
         abs_path.parent.mkdir(parents=True, exist_ok=True)
