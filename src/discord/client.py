@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from src.config import get_config
 from src.discord.handlers import MessageHandler
+from src.discord.voice import VoiceSessionManager
 
 logger = logging.getLogger("meowko")
 
@@ -28,6 +29,7 @@ class MeowkoBot(commands.Bot):
         )
 
         self.message_handler = MessageHandler()
+        self.voice_manager = VoiceSessionManager()
         config = get_config()
         self.message_delay = config.discord["message_delay"]
 
@@ -67,10 +69,40 @@ class MeowkoBot(commands.Bot):
     async def setup_hook(self) -> None:
         """Called before the bot starts."""
         logger.info("Setting up bot...")
+        from src.discord.commands import setup as commands_setup
+        await commands_setup(self)
+        await self.tree.sync()
+        logger.info("Slash commands synced")
 
     async def on_ready(self) -> None:
         """Called when the bot is ready."""
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        await self._auto_join_occupied_channels()
+
+    async def _auto_join_occupied_channels(self) -> None:
+        """Join voice channels that already have users at startup."""
+        for guild in self.guilds:
+            for channel in guild.voice_channels:
+                non_bot_members = [m for m in channel.members if not m.bot]
+                if non_bot_members:
+                    logger.info(
+                        "Auto-joining occupied voice channel: %s (guild: %s, %d user(s))",
+                        channel.name, guild.name, len(non_bot_members),
+                    )
+                    try:
+                        await self.voice_manager.join(channel)
+                    except Exception:
+                        logger.exception("Auto-join failed for channel %s", channel.name)
+                    break  # One channel per guild
+
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        """Delegate voice state updates to the voice manager."""
+        await self.voice_manager.on_voice_state_update(member, before, after)
 
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages."""

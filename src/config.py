@@ -42,6 +42,7 @@ DEFAULTS: dict[str, Any] = {
         "stt_model": "scribe_v2",
         "language": "",
         "timeout": 120,
+        "voice_settings": {},
     },
     "brave": {
         "api_key": "",
@@ -91,13 +92,13 @@ class Config:
     """Bot configuration loaded from config.yaml."""
 
     _instance: "Config | None" = None
-    _data: dict[str, Any] = {}
-    _config_path: Path | None = None
-    _last_modified: float = 0
 
     def __new__(cls) -> "Config":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance._data = {}
+            cls._instance._config_path = None
+            cls._instance._last_modified = 0.0
         return cls._instance
 
     def load(self, path: Path | None = None) -> None:
@@ -277,6 +278,11 @@ class Config:
     @property
     def paths(self) -> dict[str, Any]:
         return self._get_with_defaults("paths")
+
+    @property
+    def data_dir(self) -> Path:
+        """Resolved, expanded path to the data directory."""
+        return Path(os.path.expanduser(self.paths["data_dir"]))
 
     @property
     def discord(self) -> dict[str, Any]:

@@ -41,6 +41,12 @@ _BLOCK_RE = re.compile(r"\[(tts|tti)\](.*?)\[/\1\]", re.DOTALL)
 Segment = dict[str, Any]
 
 
+def format_user_message(user_name: str, text: str) -> str:
+    """Format a user message with timestamp prefix."""
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return f"[{current_time}] {user_name}: {text}"
+
+
 class MessageHandler:
     """Handler for Discord text, image, and audio messages."""
 
@@ -86,10 +92,6 @@ class MessageHandler:
         user_text = message.content or ""
         persona_id = "meowko"  # Default persona for now
 
-        # Format message with timestamp and username
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-        prefix = f"[{current_time}] {user_name}:"
-
         # Extract media outside the lock (independent I/O)
         images = await self._extract_images(message.attachments)
         transcripts = await self._transcribe_audio(message.attachments)
@@ -102,15 +104,15 @@ class MessageHandler:
         else:
             logger.info("Processing message from %s: %s", user_name, user_text[:50])
 
-        # Build text line for this message
-        text_parts = [prefix]
+        # Build combined text content for this message
+        content_parts = []
         if user_text:
-            text_parts.append(f" {user_text}")
+            content_parts.append(user_text)
         for img in images:
-            text_parts.append(f" [Image: {img['filename']}]")
+            content_parts.append(f"[Image: {img['filename']}]")
         for tr in transcripts:
-            text_parts.append(f" [Voice message: {tr['text']}]")
-        text_line = "".join(text_parts)
+            content_parts.append(f"[Voice message: {tr['text']}]")
+        text_line = format_user_message(user_name, " ".join(content_parts))
 
         # Enqueue and let the lock holder batch us
         scope_key = f"{persona_id}-{user_id}"
@@ -325,7 +327,7 @@ class MessageHandler:
 
     async def _extract_images(
         self, attachments: list[discord.Attachment]
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         """Extract supported image attachments as base64 data URLs."""
         images = []
         for attachment in attachments:
@@ -354,7 +356,7 @@ class MessageHandler:
 
     async def _transcribe_audio(
         self, attachments: list[discord.Attachment]
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         """Transcribe supported audio attachments via ElevenLabs STT."""
         transcripts = []
         for attachment in attachments:

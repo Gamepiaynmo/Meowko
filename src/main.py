@@ -3,7 +3,6 @@
 import asyncio
 import locale
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from shutil import move
@@ -56,6 +55,9 @@ def setup_logging(log_file: Path | None = None, log_level: str = "INFO") -> None
         handlers=handlers,
     )
 
+    # Silence noisy voice_recv loggers (opus decoder flushes, etc.)
+    logging.getLogger("discord.ext.voice_recv").setLevel(logging.ERROR)
+
 
 async def config_watcher(interval: int = 5) -> None:
     """Watch for config file changes and reload if modified.
@@ -77,7 +79,7 @@ async def _main() -> None:
     config.load(config_path)
 
     # Setup logging with file
-    data_dir = Path(os.path.expanduser(config.paths["data_dir"]))
+    data_dir = config.data_dir
     logs_dir = data_dir / config.paths["logs_dir"]
     log_file = logs_dir / "meowko.log"
     setup_logging(log_file=log_file)

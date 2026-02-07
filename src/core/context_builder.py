@@ -1,11 +1,12 @@
 """Builds LLM context from persona prompt, memories, and recent turns."""
 
 import logging
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
@@ -21,7 +22,7 @@ class ContextBuilder:
         """Initialize the context builder."""
         config = get_config()
         if data_dir is None:
-            data_dir = Path(os.path.expanduser(config.paths["data_dir"]))
+            data_dir = config.data_dir
         self.data_dir = data_dir
         self.store = JSONLStore(data_dir)
         self.config = config
@@ -46,7 +47,6 @@ class ContextBuilder:
         persona_yaml_path = persona_dir / "persona.yaml"
         nickname = persona_id
         if persona_yaml_path.exists():
-            import yaml
             with open(persona_yaml_path, encoding="utf-8") as f:
                 persona_config = yaml.safe_load(f)
             nickname = persona_config.get("nickname", persona_id)
@@ -56,7 +56,7 @@ class ContextBuilder:
     async def build_context(
         self,
         user_id: int,
-        persona_id: str = "alice",
+        persona_id: str = "meowko",
     ) -> list[dict[str, Any]]:
         """Build the LLM context for a conversation.
 
@@ -182,7 +182,7 @@ class ContextBuilder:
         user_id: int,
         user_message: str,
         assistant_message: str,
-        persona_id: str = "alice",
+        persona_id: str = "meowko",
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         total_tokens: int = 0,

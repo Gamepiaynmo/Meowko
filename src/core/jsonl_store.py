@@ -1,7 +1,6 @@
 """JSONL storage for conversations - append-only logs per scope."""
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,7 +15,7 @@ class JSONLStore:
         """Initialize the store with data directory."""
         config = get_config()
         if data_dir is None:
-            data_dir = Path(os.path.expanduser(config.paths["data_dir"]))
+            data_dir = config.data_dir
         self.data_dir = data_dir
         self.conversations_dir = data_dir / config.paths["conversations_dir"]
 
