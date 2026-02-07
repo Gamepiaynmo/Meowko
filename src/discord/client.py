@@ -62,8 +62,16 @@ class MeowkoBot(commands.Bot):
         # Process commands first
         await self.process_commands(message)
 
-        # Handle text messages in guild channels
-        if message.guild and message.content:
-            async with message.channel.typing():
-                response = await self.message_handler.handle_text_message(message)
-                await self._send_split_response(message.channel, response)
+        # Handle messages in guild channels (text and/or image attachments)
+        has_images = any(
+            a.content_type and a.content_type.startswith("image/")
+            for a in message.attachments
+        )
+        if message.guild and (message.content or has_images):
+            try:
+                async with message.channel.typing():
+                    response = await self.message_handler.handle_message(message)
+                    if response:
+                        await self._send_split_response(message.channel, response)
+            except Exception:
+                logger.exception("Error handling message from %s in #%s", message.author, message.channel)

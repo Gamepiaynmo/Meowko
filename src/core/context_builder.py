@@ -141,7 +141,7 @@ class ContextBuilder:
         cost: float = 0.0,
     ) -> None:
         """Save a user-assistant turn to the conversation log."""
-        timestamp = __import__("datetime").datetime.now().isoformat()
+        timestamp = datetime.now().isoformat()
 
         # Save user message
         self.store.append(

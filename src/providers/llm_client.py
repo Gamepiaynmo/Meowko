@@ -1,6 +1,6 @@
 """OpenAI-compatible LLM client."""
 
-from typing import Any, AsyncIterator
+from typing import Any
 
 import openai
 
@@ -52,13 +52,15 @@ class LLMClient:
 
     async def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.7,
     ) -> LLMResponse:
         """Send a chat completion request.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys.
+                      Content can be a string or a list of content blocks
+                      (e.g., text + image_url for vision).
             temperature: Sampling temperature.
 
         Returns:
