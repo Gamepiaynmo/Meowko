@@ -12,6 +12,7 @@ import discord
 
 from src.config import get_config
 from src.core.context_builder import ContextBuilder
+from src.core.user_state import UserState
 from src.providers.elevenlabs import ElevenLabsTTS
 from src.providers.soniox import SonioxSTT
 from src.providers.llm_client import LLMClient, LLMResponse
@@ -57,6 +58,7 @@ class MessageHandler:
         self.llm_client = LLMClient()
         self.stt = SonioxSTT()
         self.tts = ElevenLabsTTS()
+        self.user_state = UserState()
         self._tti: "ImageGenClient | None" = None
         self._tti_init = False
         self._scope_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -91,7 +93,7 @@ class MessageHandler:
         user_id = message.author.id
         user_name = message.author.display_name
         user_text = message.content or ""
-        persona_id = "meowko"  # Default persona for now
+        persona_id = self.user_state.get_persona_id(user_id)
 
         # Extract media outside the lock (independent I/O)
         images = await self._extract_images(message.attachments)

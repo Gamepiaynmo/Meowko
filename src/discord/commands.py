@@ -4,11 +4,13 @@ import logging
 from datetime import datetime
 
 import discord
+import yaml
 from discord import app_commands
 from discord.ext import commands
 from zoneinfo import ZoneInfo
 
 from src.config import get_config
+from src.core.user_state import UserState
 
 logger = logging.getLogger("meowko")
 
@@ -71,6 +73,7 @@ class MemoryCommands(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self.user_state = UserState()
 
     @app_commands.command(name="compact", description="Compact current conversation into memory")
     async def compact(self, interaction: discord.Interaction) -> None:
@@ -84,10 +87,8 @@ class MemoryCommands(commands.Cog):
             from src.core.memory_manager import MemoryManager
 
             config = get_config()
-            # Determine persona_id from the bot's handler
-            handler = getattr(self.bot, "message_handler", None)
-            persona_id = getattr(handler, "persona_id", "meowko") if handler else "meowko"
             user_id = interaction.user.id
+            persona_id = self.user_state.get_persona_id(user_id)
             scope_id = f"{persona_id}-{user_id}"
 
             tz = ZoneInfo(config.memory.get("timezone", "UTC"))
@@ -101,7 +102,68 @@ class MemoryCommands(commands.Cog):
             await interaction.followup.send(f"Compact failed: {e}", ephemeral=True)
 
 
+class PersonaCommands(commands.Cog):
+    """Slash commands for persona selection."""
+
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+        self.user_state = UserState()
+
+    persona = app_commands.Group(name="persona", description="Manage active persona")
+
+    @persona.command(name="list", description="List available personas")
+    async def persona_list(self, interaction: discord.Interaction) -> None:
+        """List all available personas, marking the user's current selection."""
+        config = get_config()
+        personas_dir = config.data_dir / config.paths["personas_dir"]
+
+        if not personas_dir.is_dir():
+            await interaction.response.send_message("No personas directory found.", ephemeral=True)
+            return
+
+        current = self.user_state.get_persona_id(interaction.user.id)
+        lines: list[str] = []
+
+        for entry in sorted(personas_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            persona_yaml = entry / "persona.yaml"
+            pid = entry.name
+            nickname = pid
+            if persona_yaml.exists():
+                with open(persona_yaml, encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                nickname = data.get("nickname", pid)
+            marker = " **(active)**" if pid == current else ""
+            lines.append(f"- `{pid}` — {nickname}{marker}")
+
+        if not lines:
+            await interaction.response.send_message("No personas found.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+    @persona.command(name="set", description="Set your active persona")
+    @app_commands.describe(persona_id="Persona directory name")
+    async def persona_set(self, interaction: discord.Interaction, persona_id: str) -> None:
+        """Set the user's active persona."""
+        config = get_config()
+        persona_dir = config.data_dir / config.paths["personas_dir"] / persona_id
+
+        if not persona_dir.is_dir():
+            await interaction.response.send_message(
+                f"Persona `{persona_id}` not found.", ephemeral=True,
+            )
+            return
+
+        self.user_state.set_persona_id(interaction.user.id, persona_id)
+        await interaction.response.send_message(
+            f"Persona set to `{persona_id}`.", ephemeral=True,
+        )
+
+
 async def setup(bot: commands.Bot) -> None:
     """Register command cogs."""
     await bot.add_cog(VoiceCommands(bot))
     await bot.add_cog(MemoryCommands(bot))
+    await bot.add_cog(PersonaCommands(bot))

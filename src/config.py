@@ -21,6 +21,7 @@ def _get_local_timezone() -> str:
 
 # Default configuration values
 DEFAULTS: dict[str, Any] = {
+    "default_persona": "meowko",
     "locale": "zh_CN.UTF-8",
     "prompts": [],
     "providers": [],

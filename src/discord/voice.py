@@ -22,6 +22,7 @@ from discord.ext.voice_recv import BasicSink, VoiceRecvClient
 
 from src.config import get_config
 from src.core.context_builder import ContextBuilder
+from src.core.user_state import UserState
 from src.discord.handlers import format_user_message
 from src.media.audio import AudioResampler, PCMStreamSource
 from src.providers.elevenlabs import ElevenLabsStreamingTTS
@@ -186,9 +187,7 @@ class VoiceSession:
 
         self._context_builder = ContextBuilder()
         self._llm_client = LLMClient()
-        self._persona_id = "meowko"
-        persona = self._context_builder.load_persona(self._persona_id)
-        self._voice_id: str | None = persona["voice_id"]
+        self._user_state = UserState()
 
     async def join(self, channel: discord.VoiceChannel) -> None:
         """Connect to a voice channel and start listening."""
@@ -273,10 +272,15 @@ class VoiceSession:
         user_name = user.display_name
         user_message = format_user_message(user_name, f"[Voice channel: {text}] ")
 
+        # Resolve persona per-turn so mid-session switches take effect
+        persona_id = self._user_state.get_persona_id(user_id)
+        persona = self._context_builder.load_persona(persona_id)
+        voice_id: str | None = persona["voice_id"]
+
         # Build context and call LLM
         context = await self._context_builder.build_context(
             user_id=user_id,
-            persona_id=self._persona_id,
+            persona_id=persona_id,
         )
         context.append({"role": "user", "content": user_message})
 
@@ -296,12 +300,12 @@ class VoiceSession:
             return
 
         # Stream TTS and play, then cache the audio
-        pcm_data = await self._stream_tts_and_play(voice_text)
+        pcm_data = await self._stream_tts_and_play(voice_text, voice_id)
         assistant_attachments: list[dict[str, str]] | None = None
         if pcm_data:
             wav_data = AudioResampler.pcm_to_wav(pcm_data)
             path = self._context_builder.save_cache_file(
-                self._persona_id, user_id, "tts.wav", wav_data,
+                persona_id, user_id, "tts.wav", wav_data,
             )
             assistant_attachments = [{"type": "tts", "path": path}]
 
@@ -310,7 +314,7 @@ class VoiceSession:
             user_id=user_id,
             user_message=user_message,
             assistant_message=raw_reply,
-            persona_id=self._persona_id,
+            persona_id=persona_id,
             prompt_tokens=llm_response.prompt_tokens,
             completion_tokens=llm_response.completion_tokens,
             total_tokens=llm_response.total_tokens,
@@ -319,7 +323,7 @@ class VoiceSession:
             assistant_attachments=assistant_attachments,
         )
 
-    async def _stream_tts_and_play(self, text: str) -> bytes | None:
+    async def _stream_tts_and_play(self, text: str, voice_id: str | None = None) -> bytes | None:
         """Create PCMStreamSource, start playback, feed TTS audio, wait for finish.
 
         Returns the raw 48kHz mono PCM audio data for caching, or None on failure.
@@ -333,8 +337,6 @@ class VoiceSession:
 
         source = PCMStreamSource()
         self._current_source = source
-
-        voice_id = self._voice_id
 
         raw_pcm_chunks: list[bytes] = []
 

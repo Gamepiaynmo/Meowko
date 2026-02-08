@@ -68,7 +68,7 @@ class ContextBuilder:
     async def build_context(
         self,
         user_id: int,
-        persona_id: str = "meowko",
+        persona_id: str,
     ) -> list[dict[str, Any]]:
         """Build the LLM context for a conversation.
 
@@ -220,7 +220,7 @@ class ContextBuilder:
         user_id: int,
         user_message: str,
         assistant_message: str,
-        persona_id: str = "meowko",
+        persona_id: str,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         total_tokens: int = 0,
