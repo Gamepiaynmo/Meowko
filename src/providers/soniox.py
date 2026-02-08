@@ -75,7 +75,7 @@ class SonioxSTT:
         async with session.post(
             f"{BASE_URL}/transcriptions", headers=headers, json=payload,
         ) as resp:
-            if resp.status != 200:
+            if resp.status not in (200, 201):
                 body = await resp.text()
                 raise RuntimeError(
                     f"Soniox STT create failed ({resp.status}): {body[:200]}"
@@ -268,6 +268,14 @@ class SonioxStreamingSTT:
             logger.exception("Soniox streaming STT receive loop error")
         finally:
             self._connected = False
+            # Close the WS here so the server's close frame is consumed
+            # promptly — avoids a 10s hang in close() later.
+            if self._ws:
+                try:
+                    await self._ws.close()
+                except Exception:
+                    pass
+                self._ws = None
 
     async def close(self) -> None:
         """Cancel receive task and close WebSocket."""

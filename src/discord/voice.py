@@ -55,8 +55,8 @@ class UserAudioStream:
 
         config = get_config()
         self._endpointing_secs = config.voice.get("endpointing_ms", 500) / 1000.0
-        # Cap buffer at ~2s of 48kHz mono 16-bit audio (192000 bytes)
-        self._max_buffer_bytes = 192000
+        # Cap buffer at ~20s of 48kHz mono 16-bit audio (1920000 bytes)
+        self._max_buffer_bytes = 1920000
 
     async def ensure_connected(self) -> None:
         """Lazy-connect (or reconnect) the STT WebSocket."""
@@ -77,10 +77,18 @@ class UserAudioStream:
             await self._connected_event.wait()
             return
         self._connecting = True
-        self._stt = SonioxStreamingSTT(
-            on_committed=self._on_committed,
-        )
-        await self._stt.connect()
+        try:
+            self._stt = SonioxStreamingSTT(
+                on_committed=self._on_committed,
+            )
+            await self._stt.connect()
+        except Exception:
+            logger.exception("STT connection failed for %s", self.user.display_name)
+            if self._stt:
+                await self._stt.close()
+                self._stt = None
+            self._connecting = False
+            return
         self._connected_event.set()
         self._connecting = False
         logger.info("STT stream connected for user %s", self.user.display_name)
@@ -174,6 +182,7 @@ class VoiceSession:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._health_task: asyncio.Task | None = None
         self._last_frame_time: float = 0.0
+        self._last_listener_restart: float = 0.0
 
         self._context_builder = ContextBuilder()
         self._llm_client = LLMClient()
@@ -408,14 +417,19 @@ class VoiceSession:
         # Proactively refresh the decryptor's secret key
         self._refresh_reader_key()
 
-        # Warn if no audio frames received for a long time
+        # Recover from stale listener after prolonged silence.
+        # Discord voice gateway can silently reconnect during idle,
+        # creating a new reader without the BasicSink callback.
         if self._last_frame_time > 0:
-            silence = time.monotonic() - self._last_frame_time
-            if silence > 120:
+            now = time.monotonic()
+            silence = now - self._last_frame_time
+            if silence > 120 and now - self._last_listener_restart > 120:
                 logger.warning(
-                    "No audio frames for %.0fs (guild: %s)",
+                    "No audio frames for %.0fs, restarting listener (guild: %s)",
                     silence, self.guild.name,
                 )
+                self._last_listener_restart = now
+                self._start_listening()
 
         logger.debug("Health check OK (guild: %s)", self.guild.name)
 

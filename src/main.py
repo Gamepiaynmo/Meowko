@@ -15,11 +15,13 @@ class SingleLineFormatter(logging.Formatter):
     """Custom formatter that only outputs the first line of each log message."""
 
     def format(self, record: logging.LogRecord) -> str:
-        # Get the formatted message
+        # Keep the main message on one line
+        original_msg = record.msg
+        if isinstance(record.msg, str):
+            record.msg = record.msg.replace("\n", " | ")
         formatted = super().format(record)
-        # Split by newlines and take only the first line
-        first_line = formatted.split("\n")[0]
-        return first_line
+        record.msg = original_msg
+        return formatted
 
 
 def setup_logging(log_file: Path | None = None, log_level: str = "INFO") -> None:
