@@ -139,6 +139,9 @@ class MemoryManager:
             return m.group(1).strip()
         raise ValueError("LLM response missing [memory] block")
 
+    def _today(self) -> date:
+        return self.store.today()
+
     # ── Read memories ──────────────────────────────────────────────
 
     def read_all_memories(self, scope_id: str) -> str:
@@ -169,7 +172,7 @@ class MemoryManager:
 
     # ── Daily memory creation ──────────────────────────────────────
 
-    async def create_daily_memory(self, scope_id: str, d: date) -> Path | None:
+    async def _create_daily_memory(self, scope_id: str, d: date) -> Path | None:
         """Summarize a day's conversation JSONL into a daily memory file.
 
         Returns the memory file path, or None if there was nothing to summarize.
@@ -193,7 +196,7 @@ class MemoryManager:
 
     # ── Rollup hierarchy ──────────────────────────────────────────
 
-    async def run_daily_rollup(self, scope_id: str, rollup_date: date) -> None:
+    async def run_daily_rollup(self, scope_id: str) -> None:
         """Run full rollup hierarchy for a scope.
 
         1. Summarize yesterday's conversation -> daily memory, archive JSONL
@@ -202,10 +205,11 @@ class MemoryManager:
         4. If 1st of season & >3 monthlies: merge -> seasonal
         5. If Jan 1 & >4 seasonals: merge -> yearly
         """
+        rollup_date = self._today()
         yesterday = rollup_date - timedelta(days=1)
 
         # 1. Daily memory + archive
-        mem_path = await self.create_daily_memory(scope_id, yesterday)
+        mem_path = await self._create_daily_memory(scope_id, yesterday)
         if mem_path:
             # Archive the JSONL file
             date_str = yesterday.strftime("%Y-%m-%d")
@@ -288,12 +292,13 @@ class MemoryManager:
 
     # ── Compaction ────────────────────────────────────────────────
 
-    async def compact_conversation(self, scope_id: str, today: date) -> None:
+    async def compact_conversation(self, scope_id: str) -> None:
         """Create daily memory for today and archive the conversation JSONL.
 
         Called by ContextBuilder when conversation exceeds token threshold.
         """
-        mem_path = await self.create_daily_memory(scope_id, today)
+        today = self._today()
+        mem_path = await self._create_daily_memory(scope_id, today)
         if mem_path:
             date_str = today.strftime("%Y-%m-%d")
             jsonl_path = self.store.conversations_dir / scope_id / f"{date_str}.jsonl"

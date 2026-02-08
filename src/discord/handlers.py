@@ -5,12 +5,12 @@ import base64
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime
 from typing import Any
 
 import discord
 
 from src.config import get_config
+from src.core.jsonl_store import _config_now
 from src.core.context_builder import ContextBuilder
 from src.core.user_state import UserState
 from src.providers.elevenlabs import ElevenLabsTTS
@@ -47,7 +47,7 @@ Segment = dict[str, Any]
 
 def format_user_message(user_name: str, text: str) -> str:
     """Format a user message with timestamp prefix."""
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+    current_time = _config_now().strftime("%Y-%m-%d %H:%M")
     return f"[{current_time}] {user_name}: {text}"
 
 

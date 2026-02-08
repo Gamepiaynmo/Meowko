@@ -70,6 +70,6 @@ class Scheduler:
 
         for scope_id in store.list_scopes():
             try:
-                await memory_manager.run_daily_rollup(scope_id, today)
+                await memory_manager.run_daily_rollup(scope_id)
             except Exception:
                 logger.exception("Rollup failed for scope %s", scope_id)

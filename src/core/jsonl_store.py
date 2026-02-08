@@ -1,6 +1,7 @@
 """JSONL storage for conversations - append-only logs per scope."""
 
 import json
+from datetime import date as date_type
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,35 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.config import get_config
+
+
+def _config_now() -> datetime:
+    """Return the current datetime in the config timezone."""
+    tz = ZoneInfo(get_config().memory["timezone"])
+    return datetime.now(tz)
+
+
+def _resolve_logical_date(now: datetime | None = None) -> date_type:
+    """Resolve the current logical date using config timezone and rollup_time.
+
+    Times before rollup_time are considered part of the previous day.
+    """
+    config = get_config()
+    memory_cfg = config.memory
+    tz = ZoneInfo(memory_cfg["timezone"])
+
+    if now is None:
+        now = datetime.now(tz)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=tz)
+
+    hour, minute = (int(x) for x in memory_cfg["rollup_time"].split(":"))
+    rollup_today = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    if now < rollup_today:
+        now = now - timedelta(days=1)
+
+    return now.date()
 
 
 class JSONLStore:
@@ -20,6 +50,11 @@ class JSONLStore:
         self.data_dir = data_dir
         self.conversations_dir: Path = data_dir / config.paths["conversations_dir"]
 
+    @staticmethod
+    def today() -> date_type:
+        """Return the current logical date (respects rollup_time boundary)."""
+        return _resolve_logical_date()
+
     def _get_file_path(
         self,
         persona_id: str,
@@ -31,22 +66,8 @@ class JSONLStore:
         Uses memory.rollup_time as the day boundary. Times before rollup_time
         are considered part of the previous day.
         """
-        config = get_config()
-        memory_cfg = config.memory
-        tz = ZoneInfo(memory_cfg["timezone"])
-
-        if date is None:
-            date = datetime.now(tz)
-        elif date.tzinfo is None:
-            date = date.replace(tzinfo=tz)
-
-        hour, minute = (int(x) for x in memory_cfg["rollup_time"].split(":"))
-        rollup_today = date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-        if date < rollup_today:
-            date = date - timedelta(days=1)
-
-        date_str = date.strftime("%Y-%m-%d")
+        logical_date = _resolve_logical_date(date)
+        date_str = logical_date.isoformat()
         scope_dir = f"{persona_id}-{user_id}"
         file_path = self.conversations_dir / scope_dir / f"{date_str}.jsonl"
         return file_path

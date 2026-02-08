@@ -1,13 +1,11 @@
 """Discord slash commands for Meowko."""
 
 import logging
-from datetime import datetime
 
 import discord
 import yaml
 from discord import app_commands
 from discord.ext import commands
-from zoneinfo import ZoneInfo
 
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
@@ -87,16 +85,12 @@ class MemoryCommands(commands.Cog):
         try:
             from src.core.memory_manager import MemoryManager
 
-            config = get_config()
             user_id = interaction.user.id
             persona_id = self.user_state.get_persona_id(user_id)
             scope_id = f"{persona_id}-{user_id}"
 
-            tz = ZoneInfo(config.memory.get("timezone", "UTC"))
-            today = datetime.now(tz).date()
-
             mm = MemoryManager()
-            await mm.compact_conversation(scope_id, today)
+            await mm.compact_conversation(scope_id)
             await interaction.followup.send("Conversation compacted into memory.", ephemeral=True)
         except Exception as e:
             logger.exception("Failed to compact conversation")

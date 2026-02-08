@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from zoneinfo import ZoneInfo
-
 from src.config import get_config
-from src.core.jsonl_store import JSONLStore
+from src.core.jsonl_store import JSONLStore, _config_now
 from src.providers.weather import get_weather, weather_code_to_description
 
 if TYPE_CHECKING:
@@ -120,10 +117,8 @@ class ContextBuilder:
 
         from src.core.memory_manager import estimate_tokens
         if estimate_tokens(all_text) > context_window * threshold:
-            tz = ZoneInfo(self.config.memory.get("timezone", "UTC"))
-            today = datetime.now(tz).date()
             logger.info("Context exceeds threshold, compacting conversation for %s", scope_id)
-            await self.memory_manager.compact_conversation(scope_id, today)
+            await self.memory_manager.compact_conversation(scope_id)
 
             return await self.build_context(user_id, persona_id)
 
@@ -136,7 +131,7 @@ class ContextBuilder:
         context_info: str,
     ) -> None:
         """Save context info (date/weather) to conversation log."""
-        timestamp = datetime.now().isoformat()
+        timestamp = _config_now().isoformat()
         self.store.append(
             persona_id,
             user_id,
@@ -171,7 +166,7 @@ class ContextBuilder:
             Formatted context info string.
         """
         # Get current date
-        now = datetime.now()
+        now = _config_now()
         date_str = now.strftime("%Y-%m-%d %A")
 
         # Get weather
@@ -205,7 +200,7 @@ class ContextBuilder:
         """
         cache_dir = self.config.paths["cache_dir"]
         scope = f"{persona_id}-{user_id}"
-        now = datetime.now()
+        now = _config_now()
         date_str = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H-%M-%S")
         short_id = uuid.uuid4().hex[:8]
@@ -234,7 +229,7 @@ class ContextBuilder:
         assistant_attachments: list[dict[str, str]] | None = None,
     ) -> None:
         """Save a user-assistant turn to the conversation log."""
-        timestamp = datetime.now().isoformat()
+        timestamp = _config_now().isoformat()
 
         # Save user message
         user_event: dict[str, Any] = {
