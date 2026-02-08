@@ -91,6 +91,25 @@ voice_id: eleven_voice_123   # ElevenLabs voice ID for TTS
 
 And `~/.meowko/personas/<persona_id>/soul.md` with the system prompt.
 
+## Running as a Service
+
+To install meowko as a systemd service that auto-restarts on crash:
+
+```bash
+./install-service.sh
+```
+
+When run as a normal user it installs a **user service** (`~/.config/systemd/user/`). When run as root it installs a **system service** (`/etc/systemd/system/`).
+
+Useful commands (drop `--user` if installed system-wide):
+
+```bash
+systemctl --user status meowko      # check status
+systemctl --user restart meowko     # restart
+systemctl --user stop meowko        # stop
+journalctl --user -u meowko -f     # follow logs
+```
+
 ## Commands
 
 - `/persona list` — List available personas (marks active one)

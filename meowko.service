@@ -1,0 +1,16 @@
+[Unit]
+Description=Meowko Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=WORKING_DIR
+ExecStart=UV_PATH run meowko
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
