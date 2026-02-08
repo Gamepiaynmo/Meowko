@@ -175,5 +175,12 @@ class JSONLStore:
         archive_dir = file_path.parent / "archive"
         archive_dir.mkdir(parents=True, exist_ok=True)
         dest = archive_dir / file_path.name
+        if dest.exists():
+            stem = file_path.stem
+            suffix = file_path.suffix
+            idx = 1
+            while dest.exists():
+                dest = archive_dir / f"{stem}-{idx}{suffix}"
+                idx += 1
         file_path.rename(dest)
         return dest
