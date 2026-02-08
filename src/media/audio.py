@@ -102,7 +102,27 @@ class PCMStreamSource(discord.AudioSource):
     def finish(self) -> None:
         """Signal that no more data will be fed."""
         with self._lock:
+            self._apply_fade_out()
             self._finished = True
+
+    def _apply_fade_out(self) -> None:
+        """Apply a short fade-out to the buffer tail to prevent end-of-stream clicks."""
+        # ~5ms at 48kHz stereo 16-bit: 240 stereo frames × 4 bytes/frame = 960 bytes
+        FADE_BYTES = 960
+        buf_len = len(self._buffer)
+        if buf_len < 4:
+            return
+        fade_len = min(buf_len, FADE_BYTES)
+        fade_len -= fade_len % 4  # align to stereo sample boundary
+        if fade_len < 4:
+            return
+
+        start = buf_len - fade_len
+        samples = array("h", bytes(self._buffer[start:]))
+        n = len(samples)
+        for i in range(n):
+            samples[i] = int(samples[i] * (1.0 - i / n))
+        self._buffer[start:] = samples.tobytes()
 
     def interrupt(self) -> None:
         """Immediately stop playback (barge-in)."""

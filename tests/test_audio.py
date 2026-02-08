@@ -96,13 +96,16 @@ class TestPCMStreamSource:
 
     def test_finish_drains_remaining_with_padding(self):
         source = PCMStreamSource()
-        partial = b"\x42" * 100
+        # Use 2000 bytes so the unfaded portion is large enough to verify
+        partial = b"\x42\x00" * 1000
         source.feed(partial)
         source.finish()
         frame = source.read()
         assert len(frame) == PCMStreamSource.FRAME_SIZE
-        assert frame[:100] == partial
-        assert frame[100:] == b"\x00" * (PCMStreamSource.FRAME_SIZE - 100)
+        # First part (before fade region) should be unchanged
+        assert frame[:1040] == partial[:1040]
+        # Tail should be silence padding
+        assert frame[2000:] == b"\x00" * (PCMStreamSource.FRAME_SIZE - 2000)
 
     def test_finish_empty_returns_empty(self):
         source = PCMStreamSource()
