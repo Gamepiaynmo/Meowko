@@ -213,7 +213,7 @@ class SonioxStreamingSTT:
             self._connected = False
 
     async def end_stream(self) -> None:
-        """Signal end-of-audio by sending an empty binary frame.
+        """Signal end-of-audio by sending an empty frame.
 
         The server will finalise remaining tokens, send ``finished: true``,
         and close the connection.  The receive loop handles firing

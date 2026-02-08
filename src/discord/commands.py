@@ -1,10 +1,14 @@
 """Discord slash commands for Meowko."""
 
 import logging
+from datetime import datetime
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+from zoneinfo import ZoneInfo
+
+from src.config import get_config
 
 logger = logging.getLogger("meowko")
 
@@ -62,6 +66,42 @@ class VoiceCommands(commands.Cog):
             await interaction.followup.send(f"Failed to leave: {e}", ephemeral=True)
 
 
+class MemoryCommands(commands.Cog):
+    """Slash commands for memory management."""
+
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+
+    @app_commands.command(name="compact", description="Compact current conversation into memory")
+    async def compact(self, interaction: discord.Interaction) -> None:
+        """Manually compact the current conversation into a memory summary."""
+        if not interaction.guild:
+            await interaction.response.send_message("This command only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            from src.core.memory_manager import MemoryManager
+
+            config = get_config()
+            # Determine persona_id from the bot's handler
+            handler = getattr(self.bot, "message_handler", None)
+            persona_id = getattr(handler, "persona_id", "meowko") if handler else "meowko"
+            user_id = interaction.user.id
+            scope_id = f"{persona_id}-{user_id}"
+
+            tz = ZoneInfo(config.memory.get("timezone", "UTC"))
+            today = datetime.now(tz).date()
+
+            mm = MemoryManager()
+            await mm.compact_conversation(scope_id, today)
+            await interaction.followup.send("Conversation compacted into memory.", ephemeral=True)
+        except Exception as e:
+            logger.exception("Failed to compact conversation")
+            await interaction.followup.send(f"Compact failed: {e}", ephemeral=True)
+
+
 async def setup(bot: commands.Bot) -> None:
-    """Register the VoiceCommands cog."""
+    """Register command cogs."""
     await bot.add_cog(VoiceCommands(bot))
+    await bot.add_cog(MemoryCommands(bot))

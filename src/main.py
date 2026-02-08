@@ -8,6 +8,7 @@ from pathlib import Path
 from shutil import move
 
 from src.config import get_config
+from src.core.scheduler import Scheduler
 from src.discord.client import MeowkoBot
 
 
@@ -105,20 +106,24 @@ async def _main() -> None:
         logger.error("Discord token not found in config.yaml. Please add 'discord.token' to your config.")
         return
 
-    # Create bot and config watcher tasks
+    # Create bot, config watcher, and scheduler tasks
     bot = MeowkoBot()
     watcher_task = asyncio.create_task(config_watcher())
+    scheduler = Scheduler()
+    scheduler_task = scheduler.start()
 
     try:
         await bot.start(discord_token)
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt, shutting down...")
     finally:
+        scheduler.stop()
         watcher_task.cancel()
-        try:
-            await watcher_task
-        except asyncio.CancelledError:
-            pass
+        for task in (watcher_task, scheduler_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await bot.close()
 
     logger.info("Meowko stopped.")

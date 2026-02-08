@@ -39,7 +39,7 @@ DEFAULTS: dict[str, Any] = {
         "api_key": "",
         "default_voice_id": "21m00Tcm4TlvDq8ikWAM",
         "model_id": "eleven_turbo_v2_5",
-        "language": "",
+        "language": "zh",
         "timeout": 120,
         "voice_settings": {},
     },
@@ -47,7 +47,7 @@ DEFAULTS: dict[str, Any] = {
         "api_key": "",
         "model": "stt-async-preview",
         "streaming_model": "stt-rt-preview",
-        "language_hints": [],
+        "language_hints": ["zh"],
         "timeout": 120,
     },
     "brave": {
@@ -55,8 +55,9 @@ DEFAULTS: dict[str, Any] = {
         "search_count": 5,
     },
     "context": {
+        "max_tokens": 8000,
         "compaction_threshold": 0.9,
-        "info_template": "Today is {date}. Weather: {weather}.",
+        "info_template": "今天是：{date} 天气：{weather}",
     },
     "memory": {
         "daily_retention": 5,
@@ -66,9 +67,6 @@ DEFAULTS: dict[str, Any] = {
     },
     "voice": {
         "endpointing_ms": 500,
-        "push_to_talk": False,
-        "sample_rate": 48000,
-        "channels": 2,
     },
     "scheduler": {
         "tick_interval": 60,

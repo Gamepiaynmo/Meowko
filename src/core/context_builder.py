@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from zoneinfo import ZoneInfo
 
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
@@ -26,6 +27,15 @@ class ContextBuilder:
         self.data_dir = data_dir
         self.store = JSONLStore(data_dir)
         self.config = config
+        self._memory_manager = None
+
+    @property
+    def memory_manager(self):
+        """Lazy-init MemoryManager to avoid circular imports."""
+        if self._memory_manager is None:
+            from src.core.memory_manager import MemoryManager
+            self._memory_manager = MemoryManager(self.data_dir)
+        return self._memory_manager
 
     def load_persona(self, persona_id: str) -> dict[str, str | None]:
         """Load persona system prompt, nickname, and voice_id.
@@ -73,10 +83,19 @@ class ContextBuilder:
         system_parts.append(persona["prompt"])
         messages.append({"role": "system", "content": "\n\n".join(system_parts)})
 
-        # 2. All previous conversation turns
+        # 2. Inject memories
+        scope_id = f"{persona_id}-{user_id}"
+        memory_text = self.memory_manager.read_all_memories(scope_id)
+        if memory_text:
+            messages.append({
+                "role": "system",
+                "content": f"# 你与他的记忆\n\n{memory_text}",
+            })
+
+        # 3. All previous conversation turns
         all_events = self.store.read_all(persona_id, user_id)
 
-        # 3. If conversation is empty, add date and weather context
+        # 4. If conversation is empty, add date and weather context
         if not all_events:
             context_info = await self._build_context_info()
             if context_info:
@@ -89,6 +108,20 @@ class ContextBuilder:
             content = event.get("content")
             if role and content:
                 messages.append({"role": role, "content": content})
+
+        # 5. Check compaction threshold
+        context_window = self.config.get_model_config()["context_window"]
+        threshold = self.config.context.get("compaction_threshold", 0.9)
+        all_text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))
+
+        from src.core.memory_manager import estimate_tokens
+        if estimate_tokens(all_text) > context_window * threshold:
+            tz = ZoneInfo(self.config.memory.get("timezone", "UTC"))
+            today = datetime.now(tz).date()
+            logger.info("Context exceeds threshold, compacting conversation for %s", scope_id)
+            await self.memory_manager.compact_conversation(scope_id, today)
+
+            return self.build_context(user_id, persona_id)
 
         return messages
 

@@ -418,18 +418,21 @@ class VoiceSession:
         self._refresh_reader_key()
 
         # Recover from stale listener after prolonged silence.
-        # Discord voice gateway can silently reconnect during idle,
-        # creating a new reader without the BasicSink callback.
-        if self._last_frame_time > 0:
-            now = time.monotonic()
-            silence = now - self._last_frame_time
-            if silence > 120 and now - self._last_listener_restart > 120:
-                logger.warning(
-                    "No audio frames for %.0fs, restarting listener (guild: %s)",
-                    silence, self.guild.name,
-                )
-                self._last_listener_restart = now
-                self._start_listening()
+        # Discord voice gateway can silently reconnect during idle, leaving
+        # the reader alive but detached from our BasicSink callback.
+        now = time.monotonic()
+        silence = now - self._last_frame_time if self._last_frame_time > 0 else None
+        if (
+            silence is not None
+            and silence > 120
+            and now - self._last_listener_restart > 120
+        ):
+            logger.warning(
+                "No audio frames for %.0fs, restarting listener (guild: %s)",
+                silence, self.guild.name,
+            )
+            self._last_listener_restart = now
+            self._start_listening()
 
         logger.debug("Health check OK (guild: %s)", self.guild.name)
 

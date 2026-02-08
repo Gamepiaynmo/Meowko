@@ -101,14 +101,11 @@ memory:
   daily_retention: 5
   monthly_retention: 3
   rollup_time: "03:00"
-  timezone: "Asia/Singapore"
+  timezone: "Asia/Shanghai"
 
 # Voice Settings
 voice:
   endpointing_ms: 500
-  push_to_talk: false
-  sample_rate: 48000
-  channels: 2
 
 # Scheduler
 scheduler:
@@ -119,7 +116,7 @@ scheduler:
 weather:
   latitude: 39.9906    # Default: Beijing
   longitude: 116.2887
-  # timezone: "Asia/Singapore"  # Optional: auto-detected from system if not set
+  # timezone: "Asia/Shanghai"  # Optional: auto-detected from system if not set
 
 # Data Paths
 paths:
