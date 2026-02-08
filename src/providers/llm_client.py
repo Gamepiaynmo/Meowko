@@ -136,7 +136,14 @@ class LLMClient:
 
             # Remove oldest files beyond the limit
             files = sorted(self._request_dir.glob("*.json"))
-            for old in files[: len(files) - self._MAX_SAVED_REQUESTS]:
+            to_delete = files[: max(0, len(files) - self._MAX_SAVED_REQUESTS)]
+            if to_delete:
+                logger.debug(
+                    "LLM request cache: %d files, deleting %d, keeping %d",
+                    len(files), len(to_delete), len(files) - len(to_delete),
+                )
+            for old in to_delete:
+                logger.debug("Deleting old request: %s", old.name)
                 old.unlink()
         except Exception:
             logger.debug("Failed to save LLM request", exc_info=True)

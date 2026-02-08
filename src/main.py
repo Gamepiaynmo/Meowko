@@ -51,7 +51,7 @@ def setup_logging(log_file: Path | None = None, log_level: str = "INFO") -> None
         # Keep only the 5 most recent log files (backups + new)
         # Reserve 1 slot for the new log file about to be created
         backups = sorted(log_file.parent.glob(f"{log_file.stem}_*{log_file.suffix}"))
-        for old in backups[: len(backups) - 4]:
+        for old in backups[: max(0, len(backups) - 4)]:
             old.unlink()
 
         # Create new empty log file

@@ -71,12 +71,17 @@ class MeowkoBot(commands.Bot):
         logger.info("Setting up bot...")
         from src.discord.commands import setup as commands_setup
         await commands_setup(self)
-        await self.tree.sync()
-        logger.info("Slash commands synced")
 
     async def on_ready(self) -> None:
         assert self.user is not None
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        for guild in self.guilds:
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            logger.info("Slash commands synced to guild %s", guild.name)
+        self.tree.clear_commands(guild=None)
+        await self.tree.sync()
+        logger.info("Cleared stale global commands")
         await self._auto_join_occupied_channels()
 
     async def _auto_join_occupied_channels(self) -> None:
