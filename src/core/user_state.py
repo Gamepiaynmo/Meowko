@@ -7,7 +7,7 @@ import yaml
 
 from src.config import get_config
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.core.state")
 
 
 class UserState:

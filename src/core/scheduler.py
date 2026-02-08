@@ -10,7 +10,7 @@ from src.config import get_config
 from src.core.jsonl_store import JSONLStore
 from src.core.memory_manager import MemoryManager
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.core.scheduler")
 
 
 class Scheduler:

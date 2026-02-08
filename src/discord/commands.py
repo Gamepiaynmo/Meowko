@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from src.config import get_config
 from src.core.user_state import UserState
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.discord.commands")
 
 
 class VoiceCommands(commands.Cog):

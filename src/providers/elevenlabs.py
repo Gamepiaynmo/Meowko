@@ -9,7 +9,7 @@ import aiohttp
 
 from src.config import get_config
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.providers.elevenlabs")
 
 BASE_URL = "https://api.elevenlabs.io/v1"
 TTS_URL = f"{BASE_URL}/text-to-speech"

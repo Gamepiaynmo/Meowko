@@ -11,7 +11,7 @@ from src.config import get_config
 from src.discord.handlers import MessageHandler
 from src.discord.voice import VoiceSessionManager
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.discord.client")
 
 
 class MeowkoBot(commands.Bot):

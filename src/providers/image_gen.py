@@ -9,7 +9,7 @@ import openai
 
 from src.config import get_config
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.providers.image_gen")
 
 
 class ImageGenClient:

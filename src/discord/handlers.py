@@ -17,7 +17,7 @@ from src.providers.elevenlabs import ElevenLabsTTS
 from src.providers.soniox import SonioxSTT
 from src.providers.llm_client import LLMClient, LLMResponse
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.discord.handlers")
 
 SUPPORTED_IMAGE_TYPES = {
     "image/jpeg": "jpeg",

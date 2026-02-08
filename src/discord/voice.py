@@ -29,7 +29,7 @@ from src.providers.elevenlabs import ElevenLabsStreamingTTS
 from src.providers.soniox import SonioxStreamingSTT
 from src.providers.llm_client import LLMClient
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.discord.voice")
 
 # Tag patterns for stripping LLM output for voice
 _TTI_BLOCK_RE = re.compile(r"\[tti\].*?\[/tti\]", re.DOTALL)
@@ -184,6 +184,8 @@ class VoiceSession:
         self._health_task: asyncio.Task | None = None
         self._last_frame_time: float = 0.0
         self._last_listener_restart: float = 0.0
+        self._listener_generation: int = 0
+        self._voice_ws_fingerprint: tuple[int | None, str | None, str | None] | None = None
 
         self._context_builder = ContextBuilder()
         self._llm_client = LLMClient()
@@ -193,6 +195,7 @@ class VoiceSession:
         """Connect to a voice channel and start listening."""
         self._loop = asyncio.get_running_loop()
         self.voice_client = await channel.connect(cls=VoiceRecvClient)
+        self._voice_ws_fingerprint = self._capture_voice_ws_fingerprint()
 
         self._frame_count = 0
         self._start_listening()
@@ -203,8 +206,15 @@ class VoiceSession:
         """(Re)start the voice receive listener with a fresh decryptor."""
         if not self.voice_client:
             return
+        # Guard against stale callbacks from older readers if the library
+        # leaves previous socket listeners attached during reconnect churn.
+        self._listener_generation += 1
+        generation = self._listener_generation
+        self._last_listener_restart = time.monotonic()
 
         def on_audio(user: discord.User | None, data: discord.ext.voice_recv.VoiceData) -> None:
+            if generation != self._listener_generation:
+                return
             if user is None or user.bot:
                 return
             self._last_frame_time = time.monotonic()
@@ -217,8 +227,36 @@ class VoiceSession:
             )
 
         self.voice_client.stop_listening()
+        self._drain_stale_voice_packets()
         self.voice_client.listen(BasicSink(on_audio))
         logger.info("Voice listener started (guild: %s)", self.guild.name)
+
+    def _drain_stale_voice_packets(self, max_packets: int = 256) -> None:
+        """Drop queued UDP packets that may belong to an old voice session key."""
+        vc = self.voice_client
+        if not vc:
+            return
+        conn = getattr(vc, "_connection", None)
+        sock = getattr(conn, "socket", None)
+        if not sock:
+            return
+
+        drained = 0
+        while drained < max_packets:
+            try:
+                sock.recv(2048)
+            except (BlockingIOError, InterruptedError):
+                break
+            except OSError:
+                break
+            drained += 1
+
+        if drained:
+            logger.info(
+                "Drained %d stale voice UDP packets before listener restart (guild: %s)",
+                drained,
+                self.guild.name,
+            )
 
     async def leave(self) -> None:
         """Close all user streams and disconnect from voice."""
@@ -232,6 +270,7 @@ class VoiceSession:
             self.voice_client.stop_listening()
             await self.voice_client.disconnect()
         self.voice_client = None
+        self._voice_ws_fingerprint = None
         logger.info("Left voice channel (guild: %s)", self.guild.name)
 
     async def _on_audio_frame(self, user: discord.User, pcm_data: bytes) -> None:
@@ -258,7 +297,13 @@ class VoiceSession:
         self._current_source.interrupt()
         self._current_source = None
         if self.voice_client and self.voice_client.is_playing():
-            self.voice_client.stop()
+            # VoiceRecvClient.stop() also stops listening; use stop_playing() so
+            # receive stays active while interrupting TTS playback.
+            stop_playing = getattr(self.voice_client, "stop_playing", None)
+            if callable(stop_playing):
+                stop_playing()
+            else:
+                self.voice_client.stop()
         logger.debug("Playback interrupted (barge-in)")
 
     async def handle_transcript(self, user: discord.Member, text: str) -> None:
@@ -270,7 +315,7 @@ class VoiceSession:
         """Build context → LLM → strip tags → stream TTS → play."""
         user_id = user.id
         user_name = user.display_name
-        user_message = format_user_message(user_name, f"[Voice channel: {text}] ")
+        user_message = format_user_message(user_name, f"[Voice channel: {text}]")
 
         # Resolve persona per-turn so mid-session switches take effect
         persona_id = self._user_state.get_persona_id(user_id)
@@ -298,6 +343,13 @@ class VoiceSession:
         if not voice_text.strip():
             logger.warning("Voice text empty after stripping tags, skipping TTS")
             return
+
+        # Send the text to the voice channel's text chat
+        if self.voice_client and self.voice_client.channel:
+            try:
+                await self.voice_client.channel.send(voice_text)
+            except Exception:
+                logger.exception("Failed to send text to voice channel")
 
         # Stream TTS and play, then cache the audio
         pcm_data = await self._stream_tts_and_play(voice_text, voice_id)
@@ -396,10 +448,26 @@ class VoiceSession:
         """Periodically check voice receive pipeline health."""
         try:
             while True:
-                await asyncio.sleep(30)
+                await asyncio.sleep(5)
                 self._health_check()
         except asyncio.CancelledError:
             pass
+
+    def _capture_voice_ws_fingerprint(self) -> tuple[int | None, str | None, str | None] | None:
+        """Return identifiers that change when Discord rolls the voice WS/session."""
+        vc = self.voice_client
+        if not vc or not vc.is_connected():
+            return None
+
+        conn = getattr(vc, "_connection", None)
+        if not conn:
+            return None
+
+        ws_obj = getattr(conn, "ws", None)
+        ws_id = id(ws_obj) if ws_obj is not None else None
+        endpoint = getattr(conn, "endpoint", None)
+        session_id = getattr(conn, "session_id", None)
+        return (ws_id, endpoint, session_id)
 
     def _health_check(self) -> None:
         """Single health check cycle: verify reader, refresh key, log status."""
@@ -407,14 +475,39 @@ class VoiceSession:
         if not vc or not vc.is_connected():
             return
 
+        # If Discord rolled the voice WS/session, recreate the reader to avoid
+        # lingering decrypt state from the previous socket/key.
+        current_fingerprint = self._capture_voice_ws_fingerprint()
+        if self._voice_ws_fingerprint is None:
+            self._voice_ws_fingerprint = current_fingerprint
+        elif current_fingerprint != self._voice_ws_fingerprint:
+            logger.warning(
+                "Voice websocket session changed, restarting listener (guild: %s)",
+                self.guild.name,
+            )
+            self._voice_ws_fingerprint = current_fingerprint
+            self._start_listening()
+        else:
+            self._voice_ws_fingerprint = current_fingerprint
+
         # Check if the reader is alive — if MISSING or not listening, restart
         reader = getattr(vc, '_reader', None)
         if not reader or reader == "MISSING":
-            logger.warning("Voice reader is missing, restarting listener (guild: %s)", self.guild.name)
-            self._start_listening()
-        elif not getattr(reader, '_listening', True):
-            logger.warning("Voice reader is not listening, restarting listener (guild: %s)", self.guild.name)
-            self._start_listening()
+            now = time.monotonic()
+            if now - self._last_listener_restart > 10:
+                logger.warning("Voice reader is missing, restarting listener (guild: %s)", self.guild.name)
+                self._start_listening()
+        else:
+            is_listening = True
+            if hasattr(reader, "is_listening") and callable(reader.is_listening):
+                is_listening = bool(reader.is_listening())
+            elif hasattr(reader, "active"):
+                is_listening = bool(getattr(reader, "active"))
+            if not is_listening:
+                now = time.monotonic()
+                if now - self._last_listener_restart > 10:
+                    logger.warning("Voice reader is not listening, restarting listener (guild: %s)", self.guild.name)
+                    self._start_listening()
 
         # Proactively refresh the decryptor's secret key
         self._refresh_reader_key()
@@ -423,7 +516,13 @@ class VoiceSession:
         # Discord voice gateway can silently reconnect during idle, leaving
         # the reader alive but detached from our BasicSink callback.
         now = time.monotonic()
-        silence = now - self._last_frame_time if self._last_frame_time > 0 else None
+        # If no frame has ever arrived, treat listener uptime as silence.
+        silence_start = (
+            self._last_frame_time
+            if self._last_frame_time > 0
+            else self._last_listener_restart
+        )
+        silence = now - silence_start if silence_start > 0 else None
         if (
             silence is not None
             and silence > 120
@@ -433,7 +532,6 @@ class VoiceSession:
                 "No audio frames for %.0fs, restarting listener (guild: %s)",
                 silence, self.guild.name,
             )
-            self._last_listener_restart = now
             self._start_listening()
 
         logger.debug("Health check OK (guild: %s)", self.guild.name)

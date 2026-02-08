@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.config")
 
 
 def _get_local_timezone() -> str:

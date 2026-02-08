@@ -9,7 +9,7 @@ from src.config import get_config
 from src.core.jsonl_store import JSONLStore
 from src.providers.llm_client import LLMClient
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.core.memory")
 
 # Season start months: Jan=Q1, Apr=Q2, Jul=Q3, Oct=Q4
 _SEASON_STARTS = {1, 4, 7, 10}

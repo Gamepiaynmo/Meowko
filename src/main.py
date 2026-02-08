@@ -48,6 +48,12 @@ def setup_logging(log_file: Path | None = None, log_level: str = "INFO") -> None
             backup_path = log_file.parent / backup_name
             move(log_file, backup_path)
 
+        # Keep only the 5 most recent log files (backups + new)
+        # Reserve 1 slot for the new log file about to be created
+        backups = sorted(log_file.parent.glob(f"{log_file.stem}_*{log_file.suffix}"))
+        for old in backups[: len(backups) - 4]:
+            old.unlink()
+
         # Create new empty log file
         file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
         file_handler.setFormatter(formatter)
@@ -87,7 +93,7 @@ async def _main() -> None:
     log_file = logs_dir / "meowko.log"
     setup_logging(log_file=log_file, log_level="INFO")
 
-    logger = logging.getLogger("meowko")
+    logger = logging.getLogger("meowko.main")
 
     # Set locale
     try:

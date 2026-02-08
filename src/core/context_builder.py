@@ -13,7 +13,7 @@ from src.config import get_config
 from src.core.jsonl_store import JSONLStore
 from src.providers.weather import get_weather, weather_code_to_description
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.core.context")
 
 
 class ContextBuilder:

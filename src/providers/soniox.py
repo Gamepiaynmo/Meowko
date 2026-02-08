@@ -11,7 +11,7 @@ import websockets
 
 from src.config import get_config
 
-logger = logging.getLogger("meowko")
+logger = logging.getLogger("meowko.providers.soniox")
 
 BASE_URL = "https://api.soniox.com/v1"
 STREAMING_URL = "wss://stt-rt.soniox.com/transcribe-websocket"
