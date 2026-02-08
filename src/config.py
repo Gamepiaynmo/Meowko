@@ -121,7 +121,7 @@ class Config:
 
         current_mtime = self._config_path.stat().st_mtime
         if current_mtime > self._last_modified:
-            logger.info(f"Config file changed, reloading...")
+            logger.info("Config file changed, reloading...")
             self.load(self._config_path)
             return True
         return False

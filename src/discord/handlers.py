@@ -16,6 +16,7 @@ from src.core.user_state import UserState
 from src.providers.elevenlabs import ElevenLabsTTS
 from src.providers.soniox import SonioxSTT
 from src.providers.llm_client import LLMClient, LLMResponse
+from src.providers.image_gen import ImageGenClient
 
 logger = logging.getLogger("meowko.discord.handlers")
 
@@ -59,18 +60,17 @@ class MessageHandler:
         self.stt = SonioxSTT()
         self.tts = ElevenLabsTTS()
         self.user_state = UserState()
-        self._tti: "ImageGenClient | None" = None
+        self._tti: ImageGenClient | None = None
         self._tti_init = False
         self._scope_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._pending: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
 
-    def _get_tti(self) -> "ImageGenClient | None":
+    def _get_tti(self) -> ImageGenClient | None:
         """Lazy-init the TTI client (returns None if not configured)."""
         if not self._tti_init:
             self._tti_init = True
             config = get_config()
             if config.tti.get("model"):
-                from src.providers.image_gen import ImageGenClient
                 try:
                     self._tti = ImageGenClient()
                 except Exception:

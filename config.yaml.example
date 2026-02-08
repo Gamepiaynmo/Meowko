@@ -82,6 +82,13 @@ elevenlabs:
   default_voice_id: "21m00Tcm4TlvDq8ikWAM"  # Rachel
   model_id: "eleven_turbo_v2_5"
   # language: "en"  # Optional: auto-detected if empty
+  timeout: 120
+  voice_settings:
+    stability: 0
+    similarity_boost: 0.5
+    style: 0
+    use_speaker_boost: true
+    speed: 1.2
 
 # Context Settings
 context:
@@ -117,5 +124,5 @@ paths:
   state_dir: state
   conversations_dir: conversations
   memories_dir: memories
-  cache_dir: cache/attachments
+  cache_dir: cache
   logs_dir: logs
