@@ -67,7 +67,6 @@ class MeowkoBot(commands.Bot):
                     )
 
     async def setup_hook(self) -> None:
-        """Called before the bot starts."""
         logger.info("Setting up bot...")
         from src.discord.commands import setup as commands_setup
         await commands_setup(self)
@@ -75,7 +74,6 @@ class MeowkoBot(commands.Bot):
         logger.info("Slash commands synced")
 
     async def on_ready(self) -> None:
-        """Called when the bot is ready."""
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         await self._auto_join_occupied_channels()
 
@@ -101,11 +99,9 @@ class MeowkoBot(commands.Bot):
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
-        """Delegate voice state updates to the voice manager."""
         await self.voice_manager.on_voice_state_update(member, before, after)
 
     async def on_message(self, message: discord.Message) -> None:
-        """Handle incoming messages."""
         if message.author == self.user:
             return
         if message.author.bot:

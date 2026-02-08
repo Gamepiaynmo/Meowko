@@ -83,14 +83,8 @@ elevenlabs:
   model_id: "eleven_turbo_v2_5"
   # language: "en"  # Optional: auto-detected if empty
 
-# Brave Search
-brave:
-  api_key: "your-api-key-here"
-  search_count: 5
-
 # Context Settings
 context:
-  max_tokens: 8000
   compaction_threshold: 0.9
   # Template for date/weather info on empty conversations
   # Available variables: {date}, {weather}
@@ -98,8 +92,6 @@ context:
 
 # Memory Settings
 memory:
-  daily_retention: 5
-  monthly_retention: 3
   rollup_time: "03:00"
   timezone: "Asia/Shanghai"
 

@@ -156,12 +156,10 @@ class SonioxStreamingSTT:
 
     def __init__(
         self,
-        on_partial: AsyncTextCallback | None = None,
         on_committed: AsyncTextCallback | None = None,
     ) -> None:
         self._cfg = _load_config()
 
-        self.on_partial = on_partial
         self.on_committed = on_committed
 
         self._ws: websockets.ClientConnection | None = None
@@ -245,11 +243,8 @@ class SonioxStreamingSTT:
 
                 # Accumulate final tokens from this response
                 for token in data.get("tokens", []):
-                    text = token.get("text", "")
                     if token.get("is_final"):
-                        self._final_parts.append(text)
-                    elif text and self.on_partial:
-                        await self.on_partial(text)
+                        self._final_parts.append(token.get("text", ""))
 
                 # Stream finished — fire committed callback with full transcript
                 if data.get("finished"):

@@ -20,7 +20,6 @@ class ContextBuilder:
     """Builds context for LLM from persona and conversation history."""
 
     def __init__(self, data_dir: Path | None = None) -> None:
-        """Initialize the context builder."""
         config = get_config()
         if data_dir is None:
             data_dir = config.data_dir

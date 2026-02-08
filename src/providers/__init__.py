@@ -1,1 +1,1 @@
-"""External service providers - LLM, ElevenLabs, Brave."""
+"""External service providers - LLM, ElevenLabs, Soniox."""

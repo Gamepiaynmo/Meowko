@@ -51,18 +51,11 @@ DEFAULTS: dict[str, Any] = {
         "language_hints": ["zh"],
         "timeout": 120,
     },
-    "brave": {
-        "api_key": "",
-        "search_count": 5,
-    },
     "context": {
-        "max_tokens": 8000,
         "compaction_threshold": 0.9,
         "info_template": "今天是：{date} 天气：{weather}",
     },
     "memory": {
-        "daily_retention": 5,
-        "monthly_retention": 3,
         "rollup_time": "03:00",
         "timezone": "Asia/Singapore",
     },
@@ -143,7 +136,6 @@ class Config:
         """Get config value by dot-notation key (e.g., 'llm.api_key')."""
         keys = key.split(".")
 
-        # Check user config first
         value = self._data
         for k in keys:
             if isinstance(value, dict) and k in value:
@@ -155,7 +147,6 @@ class Config:
         if value is not None:
             return value
 
-        # Fall back to defaults
         value = DEFAULTS
         for k in keys:
             if isinstance(value, dict) and k in value:
@@ -174,14 +165,12 @@ class Config:
         Raises:
             ValueError: If provider or model cannot be found.
         """
-        # Parse provider/model format
         if "/" in model_ref:
             provider_name, model_name = model_ref.split("/", 1)
         else:
             provider_name = None
             model_name = model_ref
 
-        # Find the provider
         providers = self._data.get("providers", []) if self._data else []
         provider = None
 
@@ -197,7 +186,6 @@ class Config:
         if provider is None:
             raise ValueError(f"No provider found for model: {model_ref}")
 
-        # Find the model in provider's models list (optional for non-LLM uses)
         models = provider.get("models", [])
         model_config: dict[str, Any] = {}
         for m in models:
@@ -252,20 +240,12 @@ class Config:
         return self._get_with_defaults("tti")
 
     @property
-    def providers(self) -> list[dict[str, Any]]:
-        return self._data.get("providers", []) if self._data else []
-
-    @property
     def elevenlabs(self) -> dict[str, Any]:
         return self._get_with_defaults("elevenlabs")
 
     @property
     def soniox(self) -> dict[str, Any]:
         return self._get_with_defaults("soniox")
-
-    @property
-    def brave(self) -> dict[str, Any]:
-        return self._get_with_defaults("brave")
 
     @property
     def context(self) -> dict[str, Any]:

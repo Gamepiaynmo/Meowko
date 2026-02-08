@@ -112,6 +112,5 @@ class PCMStreamSource(discord.AudioSource):
         return False
 
     def cleanup(self) -> None:
-        """Clean up resources."""
         with self._lock:
             self._buffer.clear()

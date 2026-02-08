@@ -40,8 +40,6 @@ class Scheduler:
             try:
                 await asyncio.sleep(tick_interval)
                 await self._tick()
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 logger.exception("Scheduler tick failed")
 

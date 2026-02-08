@@ -34,12 +34,13 @@ SUPPORTED_AUDIO_TYPES = {
 }
 
 # Matches [tts]...[/tts] and [tti]...[/tti] blocks, preserving order.
-_BLOCK_RE = re.compile(r"\[(tts|tti)\](.*?)\[/\1\]", re.DOTALL)
+# Keep "tti" first and normalize to lowercase so "[tti]" can never be
+# misrouted as TTS even if tag case varies.
+_BLOCK_RE = re.compile(
+    r"\[(tti|tts)\](.*?)\[/\1\]",
+    re.DOTALL | re.IGNORECASE,
+)
 
-# A segment is a dict:
-#   {"type": "text",  "content": str}
-#   {"type": "tts",   "content": str, "audio": bytes | None}
-#   {"type": "tti",   "image":   bytes | None}
 Segment = dict[str, Any]
 
 
@@ -53,7 +54,6 @@ class MessageHandler:
     """Handler for Discord text, image, and audio messages."""
 
     def __init__(self) -> None:
-        """Initialize the message handler."""
         self.context_builder = ContextBuilder()
         self.llm_client = LLMClient()
         self.stt = SonioxSTT()
@@ -271,7 +271,7 @@ class MessageHandler:
             before = text[last_end:m.start()].strip()
             if before:
                 raw.append(("text", before))
-            raw.append((m.group(1), m.group(2).strip()))
+            raw.append((m.group(1).lower(), m.group(2).strip()))
             last_end = m.end()
         tail = text[last_end:].strip()
         if tail:

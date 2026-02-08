@@ -14,7 +14,6 @@ class JSONLStore:
     """Append-only JSONL storage for conversation events."""
 
     def __init__(self, data_dir: Path | None = None) -> None:
-        """Initialize the store with data directory."""
         config = get_config()
         if data_dir is None:
             data_dir = config.data_dir
@@ -97,13 +96,6 @@ class JSONLStore:
             for d in self.conversations_dir.iterdir()
             if d.is_dir() and d.name != "archive"
         )
-
-    def list_files(self, scope_id: str) -> list[Path]:
-        """List JSONL files for a scope, sorted ascending by name."""
-        scope_dir = self.conversations_dir / scope_id
-        if not scope_dir.exists():
-            return []
-        return sorted(scope_dir.glob("*.jsonl"))
 
     def read_file(self, file_path: Path) -> list[dict]:
         """Read events from a specific JSONL file."""

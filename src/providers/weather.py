@@ -14,13 +14,6 @@ async def _get_session() -> aiohttp.ClientSession:
     return _session
 
 
-async def close_session() -> None:
-    global _session
-    if _session and not _session.closed:
-        await _session.close()
-        _session = None
-
-
 async def get_weather() -> dict[str, str]:
     """Fetch current weather from Open-Meteo API.
 

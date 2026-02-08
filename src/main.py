@@ -104,9 +104,6 @@ async def _main() -> None:
 
     logger.info("Starting Meowko...")
 
-    # Get Discord token from config
-    # Note: Discord token should be in config.yaml under discord.token
-    # For now, we'll check if it's there, otherwise log an error
     discord_token = config.get("discord.token")
     if not discord_token:
         logger.error("Discord token not found in config.yaml. Please add 'discord.token' to your config.")

@@ -39,7 +39,6 @@ class LLMClient:
     _MAX_SAVED_REQUESTS = 5
 
     def __init__(self) -> None:
-        """Initialize the LLM client with configuration."""
         config = get_config()
         model_config = config.get_model_config()
 
