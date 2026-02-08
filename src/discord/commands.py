@@ -10,6 +10,7 @@ from discord.ext import commands
 from zoneinfo import ZoneInfo
 
 from src.config import get_config
+from src.core.jsonl_store import JSONLStore
 from src.core.user_state import UserState
 
 logger = logging.getLogger("meowko.discord.commands")
@@ -102,6 +103,28 @@ class MemoryCommands(commands.Cog):
             await interaction.followup.send(f"Compact failed: {e}", ephemeral=True)
 
 
+class RewindCommands(commands.Cog):
+    """Slash command to rewind conversation history."""
+
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+        self.user_state = UserState()
+        self.store = JSONLStore()
+
+    @app_commands.command(name="rewind", description="Remove the last exchange from conversation history")
+    async def rewind(self, interaction: discord.Interaction) -> None:
+        user_id = interaction.user.id
+        persona_id = self.user_state.get_persona_id(user_id)
+        removed = self.store.rewind(persona_id, user_id)
+
+        if removed:
+            await interaction.response.send_message(
+                f"Rewound {removed} message(s) from history.", ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message("Nothing to rewind.", ephemeral=True)
+
+
 class PersonaCommands(commands.Cog):
     """Slash commands for persona selection."""
 
@@ -166,4 +189,5 @@ async def setup(bot: commands.Bot) -> None:
     """Register command cogs."""
     await bot.add_cog(VoiceCommands(bot))
     await bot.add_cog(MemoryCommands(bot))
+    await bot.add_cog(RewindCommands(bot))
     await bot.add_cog(PersonaCommands(bot))

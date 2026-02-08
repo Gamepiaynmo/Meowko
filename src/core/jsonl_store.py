@@ -116,6 +116,39 @@ class JSONLStore:
         file_path = self.conversations_dir / scope_id / f"{date_str}.jsonl"
         return self.read_file(file_path)
 
+    def rewind(self, persona_id: str, user_id: int) -> int:
+        """Remove all events from the last user message onward.
+
+        Returns the number of events removed, or 0 if nothing to rewind.
+        """
+        file_path = self._get_file_path(persona_id, user_id)
+        events = self.read_file(file_path)
+        if not events:
+            return 0
+
+        # Find the last user message index
+        last_user_idx = None
+        for i in range(len(events) - 1, -1, -1):
+            if events[i].get("role") == "user":
+                last_user_idx = i
+                break
+
+        if last_user_idx is None:
+            return 0
+
+        removed = len(events) - last_user_idx
+        kept = events[:last_user_idx]
+
+        if kept:
+            with open(file_path, "w", encoding="utf-8") as f:
+                for event in kept:
+                    json.dump(event, f, ensure_ascii=False)
+                    f.write("\n")
+        elif file_path.exists():
+            file_path.unlink()
+
+        return removed
+
     def archive(self, file_path: Path) -> Path:
         """Move file to archive/ subdirectory within its parent."""
         archive_dir = file_path.parent / "archive"
