@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.config import get_config
+from src.core.persona_id import validate_persona_id
 
 
 def _config_now() -> datetime:
@@ -66,6 +67,7 @@ class JSONLStore:
         Uses memory.rollup_time as the day boundary. Times before rollup_time
         are considered part of the previous day.
         """
+        persona_id = validate_persona_id(persona_id)
         logical_date = _resolve_logical_date(date)
         date_str = logical_date.isoformat()
         scope_dir = f"{persona_id}-{user_id}"
@@ -132,6 +134,7 @@ class JSONLStore:
 
     def read_date(self, persona_id: str, user_id: int, date: datetime) -> list[dict[str, Any]]:
         """Read events for a specific date."""
+        persona_id = validate_persona_id(persona_id)
         scope_id = f"{persona_id}-{user_id}"
         date_str = date.strftime("%Y-%m-%d")
         file_path = self.conversations_dir / scope_id / f"{date_str}.jsonl"

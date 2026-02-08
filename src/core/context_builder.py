@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore, _config_now
+from src.core.persona_id import validate_persona_id
 from src.providers.weather import get_weather, weather_code_to_description
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ class ContextBuilder:
         Returns:
             Dict with keys: prompt, nickname, voice_id.
         """
+        persona_id = validate_persona_id(persona_id)
         personas_dir = self.data_dir / self.config.paths["personas_dir"]
         persona_dir = personas_dir / persona_id
 
@@ -76,53 +78,80 @@ class ContextBuilder:
         Returns:
             List of message dicts with 'role' and 'content' keys.
         """
-        messages = []
-
-        # 1. Shared prompts + persona system prompt (single system message)
-        system_parts = self._load_shared_prompts()
-        persona = self.load_persona(persona_id)
-        system_parts.append(persona["prompt"] or "")
-        messages.append({"role": "system", "content": "\n\n".join(system_parts)})
-
-        # 2. Inject memories
+        persona_id = validate_persona_id(persona_id)
         scope_id = f"{persona_id}-{user_id}"
-        memory_text = self.memory_manager.read_all_memories(scope_id)
-        if memory_text:
-            messages.append({
-                "role": "system",
-                "content": f"# 你与他的记忆\n\n{memory_text}",
-            })
-
-        # 3. All previous conversation turns
-        all_events = self.store.read_all(persona_id, user_id)
-
-        # 4. If conversation is empty, add date and weather context
-        if not all_events:
-            context_info = await self._build_context_info()
-            if context_info:
-                messages.append({"role": "system", "content": context_info})
-                # Save context info to conversation log
-                self._save_context_info(user_id, persona_id, context_info)
-
-        for event in all_events:
-            role = event.get("role")
-            content = event.get("content")
-            if role and content:
-                messages.append({"role": role, "content": content})
-
-        # 5. Check compaction threshold
-        context_window = self.config.get_model_config()["context_window"]
-        threshold = self.config.context.get("compaction_threshold", 0.9)
-        all_text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))
+        max_attempts = int(self.config.context.get("max_compaction_attempts", 2))
 
         from src.core.memory_manager import estimate_tokens
-        if estimate_tokens(all_text) > context_window * threshold:
+
+        attempts = 0
+        while True:
+            messages = []
+
+            # 1. Shared prompts + persona system prompt (single system message)
+            system_parts = self._load_shared_prompts()
+            persona = self.load_persona(persona_id)
+            system_parts.append(persona["prompt"] or "")
+            messages.append({"role": "system", "content": "\n\n".join(system_parts)})
+
+            # 2. Inject memories
+            memory_text = self.memory_manager.read_all_memories(scope_id)
+            if memory_text:
+                messages.append({
+                    "role": "system",
+                    "content": f"# 你与他的记忆\n\n{memory_text}",
+                })
+
+            # 3. All previous conversation turns
+            all_events = self.store.read_all(persona_id, user_id)
+
+            # 4. If conversation is empty, add date and weather context
+            if not all_events:
+                context_info = await self._build_context_info()
+                if context_info:
+                    messages.append({"role": "system", "content": context_info})
+                    # Save context info to conversation log
+                    self._save_context_info(user_id, persona_id, context_info)
+
+            for event in all_events:
+                role = event.get("role")
+                content = event.get("content")
+                if role and content:
+                    messages.append({"role": role, "content": content})
+
+            # 5. Check compaction threshold
+            context_window = self.config.get_model_config()["context_window"]
+            threshold = self.config.context.get("compaction_threshold", 0.9)
+            all_text = " ".join(
+                m.get("content", "")
+                for m in messages
+                if isinstance(m.get("content"), str)
+            )
+            if estimate_tokens(all_text) <= context_window * threshold:
+                return messages
+
+            if attempts >= max_attempts:
+                logger.warning(
+                    "Context still exceeds threshold after %d compaction attempt(s) for %s",
+                    attempts,
+                    scope_id,
+                )
+                return messages
+
+            before_count = len(all_events)
             logger.info("Context exceeds threshold, compacting conversation for %s", scope_id)
             await self.memory_manager.compact_conversation(scope_id)
+            after_count = len(self.store.read_all(persona_id, user_id))
+            attempts += 1
 
-            return await self.build_context(user_id, persona_id)
-
-        return messages
+            if after_count >= before_count:
+                logger.warning(
+                    "Compaction made no progress for %s (events before=%d after=%d)",
+                    scope_id,
+                    before_count,
+                    after_count,
+                )
+                return messages
 
     def _save_context_info(
         self,
@@ -198,6 +227,7 @@ class ContextBuilder:
         Returns:
             Path relative to data_dir (e.g. "cache/meowko-123/2026-02-07/14-30-52-a1b2c3d4.jpg").
         """
+        persona_id = validate_persona_id(persona_id)
         cache_dir = self.config.paths["cache_dir"]
         scope = f"{persona_id}-{user_id}"
         now = _config_now()
@@ -229,6 +259,7 @@ class ContextBuilder:
         assistant_attachments: list[dict[str, str]] | None = None,
     ) -> None:
         """Save a user-assistant turn to the conversation log."""
+        persona_id = validate_persona_id(persona_id)
         timestamp = _config_now().isoformat()
 
         # Save user message

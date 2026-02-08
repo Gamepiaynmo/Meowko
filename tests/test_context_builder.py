@@ -1,7 +1,8 @@
 """Tests for ContextBuilder persona loading, turn saving, and cache file saving."""
 
-from pathlib import Path
+from typing import Any, cast
 
+import pytest
 import yaml
 
 from src.core.context_builder import ContextBuilder
@@ -125,3 +126,41 @@ class TestSharedPrompts:
         cb = ContextBuilder()
         prompts = cb._load_shared_prompts()
         assert prompts == []
+
+
+class _FakeMemoryManager:
+    def __init__(self) -> None:
+        self.compact_calls = 0
+
+    def read_all_memories(self, scope_id: str) -> str:
+        return "x" * 50000
+
+    async def compact_conversation(self, scope_id: str) -> None:
+        self.compact_calls += 1
+
+
+class TestBuildContextGuards:
+    def test_load_persona_rejects_invalid_persona_id(self, config_file):
+        cb = ContextBuilder()
+        with pytest.raises(ValueError, match="Invalid persona_id"):
+            cb.load_persona("../etc/passwd")
+
+    @pytest.mark.asyncio
+    async def test_compaction_attempts_are_bounded(self, config_file, monkeypatch):
+        cb = ContextBuilder()
+        cb.config._data["context"] = {
+            "compaction_threshold": 0.0001,
+            "max_compaction_attempts": 1,
+        }
+
+        fake_mm = _FakeMemoryManager()
+        cb._memory_manager = cast(Any, fake_mm)
+
+        async def _no_context_info() -> str:
+            return ""
+
+        monkeypatch.setattr(cb, "_build_context_info", _no_context_info)
+
+        messages = await cb.build_context(user_id=1, persona_id="safe_persona")
+        assert messages
+        assert fake_mm.compact_calls == 1

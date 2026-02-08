@@ -11,6 +11,8 @@ from src.config import get_config
 from src.core.scheduler import Scheduler
 from src.discord.client import MeowkoBot
 
+logger = logging.getLogger("meowko.main")
+
 
 class SingleLineFormatter(logging.Formatter):
     """Custom formatter that only outputs the first line of each log message."""
@@ -77,7 +79,10 @@ async def config_watcher(interval: int = 5) -> None:
     config = get_config()
     while True:
         await asyncio.sleep(interval)
-        config.reload_if_changed()
+        try:
+            config.reload_if_changed()
+        except Exception:
+            logger.exception("Config reload failed")
 
 
 async def _main() -> None:
@@ -92,8 +97,6 @@ async def _main() -> None:
     logs_dir = data_dir / config.paths["logs_dir"]
     log_file = logs_dir / "meowko.log"
     setup_logging(log_file=log_file, log_level="INFO")
-
-    logger = logging.getLogger("meowko.main")
 
     # Set locale
     try:

@@ -33,3 +33,13 @@ class TestUserState:
 
         state2 = UserState()
         assert state2.get_persona_id(99) == "persistent"
+
+    def test_invalid_persisted_persona_falls_back_to_default(self, config_file):
+        state = UserState()
+        state._write(7, {"persona_id": "../bad"})
+        assert state.get_persona_id(7) == "test-persona"
+
+    def test_non_string_persisted_persona_falls_back_to_default(self, config_file):
+        state = UserState()
+        state._write(8, {"persona_id": ["bad"]})
+        assert state.get_persona_id(8) == "test-persona"

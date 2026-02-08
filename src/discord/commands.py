@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
+from src.core.persona_id import is_valid_persona_id
 from src.core.user_state import UserState
 
 logger = logging.getLogger("meowko.discord.commands")
@@ -165,7 +166,21 @@ class PersonaCommands(commands.Cog):
     async def persona_set(self, interaction: discord.Interaction, persona_id: str) -> None:
         """Set the user's active persona."""
         config = get_config()
-        persona_dir = config.data_dir / config.paths["personas_dir"] / persona_id
+        if not is_valid_persona_id(persona_id):
+            await interaction.response.send_message(
+                "Invalid persona ID. Use letters, numbers, hyphens, and underscores only.",
+                ephemeral=True,
+            )
+            return
+
+        personas_dir = (config.data_dir / config.paths["personas_dir"]).resolve()
+        persona_dir = (personas_dir / persona_id).resolve()
+        if personas_dir not in persona_dir.parents:
+            await interaction.response.send_message(
+                "Invalid persona path.",
+                ephemeral=True,
+            )
+            return
 
         if not persona_dir.is_dir():
             await interaction.response.send_message(

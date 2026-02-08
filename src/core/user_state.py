@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 
 from src.config import get_config
+from src.core.persona_id import is_valid_persona_id
 
 logger = logging.getLogger("meowko.core.state")
 
@@ -38,9 +39,21 @@ class UserState:
     def get_persona_id(self, user_id: int) -> str:
         """Return the user's active persona, falling back to config default."""
         data = self._read(user_id)
-        if "persona_id" in data:
-            return str(data["persona_id"])
-        return str(get_config().get("default_persona", "meowko"))
+        default_persona = str(get_config().get("default_persona", "meowko"))
+
+        if "persona_id" not in data:
+            return default_persona
+
+        persona_id = str(data["persona_id"])
+        if is_valid_persona_id(persona_id):
+            return persona_id
+
+        logger.warning(
+            "Ignoring invalid persona_id in state for user %s: %r",
+            user_id,
+            persona_id,
+        )
+        return default_persona
 
     def set_persona_id(self, user_id: int, persona_id: str) -> None:
         """Persist the user's persona selection."""

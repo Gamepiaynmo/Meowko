@@ -1,8 +1,8 @@
 """Tests for JSONLStore conversation storage."""
 
-import json
 from datetime import datetime
 
+import pytest
 from zoneinfo import ZoneInfo
 
 from src.core.jsonl_store import JSONLStore
@@ -129,7 +129,7 @@ class TestListScopes:
 
     def test_list_scopes_excludes_archive(self, config_file):
         store = JSONLStore()
-        path = store.append("p", 1, {"role": "user", "content": "x"})
+        store.append("p", 1, {"role": "user", "content": "x"})
         # Create archive dir manually
         (store.conversations_dir / "archive").mkdir(exist_ok=True)
         scopes = store.list_scopes()
@@ -153,3 +153,10 @@ class TestDateBoundary:
         dt = datetime(2025, 6, 15, 4, 0, tzinfo=tz)
         path = store._get_file_path("p", 1, dt)
         assert "2025-06-15" in path.name
+
+
+class TestPersonaValidation:
+    def test_invalid_persona_id_raises(self, config_file):
+        store = JSONLStore()
+        with pytest.raises(ValueError, match="Invalid persona_id"):
+            store.append("../bad", 1, {"role": "user", "content": "x"})
