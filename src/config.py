@@ -89,6 +89,9 @@ class Config:
     """Bot configuration loaded from config.yaml."""
 
     _instance: "Config | None" = None
+    _data: dict[str, Any]
+    _config_path: Path | None
+    _last_modified: float
 
     def __new__(cls) -> "Config":
         if cls._instance is None:
@@ -136,7 +139,7 @@ class Config:
         """Get config value by dot-notation key (e.g., 'llm.api_key')."""
         keys = key.split(".")
 
-        value = self._data
+        value: Any = self._data
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
@@ -283,7 +286,8 @@ class Config:
     @property
     def locale(self) -> str:
         """Get the configured locale."""
-        return self._data.get("locale", DEFAULTS["locale"]) if self._data else DEFAULTS["locale"]
+        locale: str = self._data.get("locale", DEFAULTS["locale"]) if self._data else DEFAULTS["locale"]
+        return locale
 
 
 def get_config() -> Config:

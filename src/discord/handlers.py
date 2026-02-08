@@ -162,7 +162,7 @@ class MessageHandler:
     ) -> list[Segment]:
         """Build context, call LLM, parse response into ordered segments."""
         all_text_lines = [item["text"] for item in batch]
-        all_images: list[dict[str, str]] = []
+        all_images: list[dict[str, Any]] = []
         all_audio_files: list[dict[str, Any]] = []
         for item in batch:
             all_images.extend(item["images"])

@@ -18,10 +18,10 @@ class Scheduler:
 
     def __init__(self) -> None:
         self.config = get_config()
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
         self._last_rollup_date: date | None = None
 
-    def start(self) -> asyncio.Task:
+    def start(self) -> asyncio.Task[None]:
         """Create and return the scheduler loop task."""
         self._task = asyncio.create_task(self._loop())
         logger.info("Scheduler started")

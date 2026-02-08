@@ -1,6 +1,7 @@
 """Audio processing utilities for voice streaming."""
 
 import io
+import math
 import threading
 import wave
 from array import array
@@ -51,6 +52,31 @@ class AudioResampler:
             wf.setframerate(sample_rate)
             wf.writeframes(pcm_data)
         return buf.getvalue()
+
+
+def generate_ding(
+    frequency: float = 880.0,
+    duration_ms: int = 150,
+    sample_rate: int = 48000,
+    volume: float = 0.3,
+) -> bytes:
+    """Generate a short sine-wave ding as 48kHz stereo 16-bit PCM."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    fade_samples = min(num_samples // 3, int(sample_rate * 0.03))
+    fade_in_samples = max(fade_samples // 3, 1)
+
+    mono = array("h", [0] * num_samples)
+    for i in range(num_samples):
+        t = i / sample_rate
+        value = math.sin(2 * math.pi * frequency * t) * volume
+        if i < fade_in_samples:
+            value *= i / fade_in_samples
+        elif i >= num_samples - fade_samples:
+            value *= (num_samples - i) / fade_samples
+        mono[i] = int(value * 32767)
+
+    stereo = array("h", (s for sample in mono for s in (sample, sample)))
+    return stereo.tobytes()
 
 
 class PCMStreamSource(discord.AudioSource):

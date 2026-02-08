@@ -107,7 +107,7 @@ class SonioxSTT:
             async with session.get(url, headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    text = data.get("text", "").strip()
+                    text = str(data.get("text", "")).strip()
                     logger.info("Soniox STT transcribed: %s", text[:80])
                     return text
                 if resp.status == 409:

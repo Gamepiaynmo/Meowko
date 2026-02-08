@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
@@ -36,7 +37,7 @@ class MemoryManager:
         self.data_dir = data_dir
         self.config = config
         self.store = JSONLStore(data_dir)
-        self.memories_dir = data_dir / config.paths["memories_dir"]
+        self.memories_dir: Path = data_dir / config.paths["memories_dir"]
 
     # ── Memory file paths ──────────────────────────────────────────
 
@@ -64,7 +65,7 @@ class MemoryManager:
 
     async def _summarize_conversation(
         self,
-        events: list[dict],
+        events: list[dict[str, Any]],
         existing_summary: str | None = None,
     ) -> str:
         """Summarize conversation events into bullet points."""
@@ -114,7 +115,7 @@ class MemoryManager:
 
         return await self._llm_call(messages)
 
-    async def _llm_call(self, messages: list[dict], retries: int = 3) -> str:
+    async def _llm_call(self, messages: list[dict[str, Any]], retries: int = 3) -> str:
         """Call LLM and extract [memory] block, retrying on failure."""
         client = LLMClient()
         for attempt in range(1, retries + 1):
@@ -125,6 +126,7 @@ class MemoryManager:
                 logger.warning("Memory LLM call attempt %d/%d failed: %s", attempt, retries, e)
                 if attempt == retries:
                     raise
+        raise RuntimeError("_llm_call exhausted retries")
 
     @staticmethod
     def _extract_memory(text: str) -> str:

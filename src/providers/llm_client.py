@@ -81,7 +81,7 @@ class LLMClient:
 
         response = await self.client.chat.completions.create(
             model=self.model,
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
             max_tokens=self.max_tokens,
             temperature=temperature,
         )

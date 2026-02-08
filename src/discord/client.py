@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+from typing import Any
 
 import discord
 from discord.ext import commands
@@ -33,7 +34,7 @@ class MeowkoBot(commands.Bot):
         config = get_config()
         self.message_delay = config.discord["message_delay"]
 
-    async def _send_split_response(self, channel: discord.TextChannel, text: str) -> None:
+    async def _send_split_response(self, channel: discord.abc.Messageable, text: str) -> None:
         """Split text by newlines and send as separate messages with delay."""
         parts = [line.strip() for line in text.split("\n") if line.strip()]
         for i, part in enumerate(parts):
@@ -42,7 +43,7 @@ class MeowkoBot(commands.Bot):
                 await asyncio.sleep(self.message_delay)
 
     async def _send_segments(
-        self, channel: discord.TextChannel, segments: list[dict],
+        self, channel: discord.abc.Messageable, segments: list[dict[str, Any]],
     ) -> None:
         """Send an ordered list of segments (text / tts / tti) to a channel."""
         for seg in segments:
@@ -74,6 +75,7 @@ class MeowkoBot(commands.Bot):
         logger.info("Slash commands synced")
 
     async def on_ready(self) -> None:
+        assert self.user is not None
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         await self._auto_join_occupied_channels()
 

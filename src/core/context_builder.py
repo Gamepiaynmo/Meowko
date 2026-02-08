@@ -1,10 +1,12 @@
 """Builds LLM context from persona prompt, memories, and recent turns."""
 
+from __future__ import annotations
+
 import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from zoneinfo import ZoneInfo
@@ -12,6 +14,9 @@ from zoneinfo import ZoneInfo
 from src.config import get_config
 from src.core.jsonl_store import JSONLStore
 from src.providers.weather import get_weather, weather_code_to_description
+
+if TYPE_CHECKING:
+    from src.core.memory_manager import MemoryManager
 
 logger = logging.getLogger("meowko.core.context")
 
@@ -26,10 +31,10 @@ class ContextBuilder:
         self.data_dir = data_dir
         self.store = JSONLStore(data_dir)
         self.config = config
-        self._memory_manager = None
+        self._memory_manager: MemoryManager | None = None
 
     @property
-    def memory_manager(self):
+    def memory_manager(self) -> MemoryManager:
         """Lazy-init MemoryManager to avoid circular imports."""
         if self._memory_manager is None:
             from src.core.memory_manager import MemoryManager
@@ -79,7 +84,7 @@ class ContextBuilder:
         # 1. Shared prompts + persona system prompt (single system message)
         system_parts = self._load_shared_prompts()
         persona = self.load_persona(persona_id)
-        system_parts.append(persona["prompt"])
+        system_parts.append(persona["prompt"] or "")
         messages.append({"role": "system", "content": "\n\n".join(system_parts)})
 
         # 2. Inject memories
@@ -120,7 +125,7 @@ class ContextBuilder:
             logger.info("Context exceeds threshold, compacting conversation for %s", scope_id)
             await self.memory_manager.compact_conversation(scope_id, today)
 
-            return self.build_context(user_id, persona_id)
+            return await self.build_context(user_id, persona_id)
 
         return messages
 
@@ -182,7 +187,7 @@ class ContextBuilder:
         # Get template from config
         template = self.config.context["info_template"]
 
-        return template.format(date=date_str, weather=weather_str)
+        return str(template.format(date=date_str, weather=weather_str))
 
     def save_cache_file(
         self,

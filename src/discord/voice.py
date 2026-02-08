@@ -24,7 +24,7 @@ from src.config import get_config
 from src.core.context_builder import ContextBuilder
 from src.core.user_state import UserState
 from src.discord.handlers import format_user_message
-from src.media.audio import AudioResampler, PCMStreamSource
+from src.media.audio import AudioResampler, PCMStreamSource, generate_ding
 from src.providers.elevenlabs import ElevenLabsStreamingTTS
 from src.providers.soniox import SonioxStreamingSTT
 from src.providers.llm_client import LLMClient
@@ -52,7 +52,7 @@ class UserAudioStream:
         self._connected_event = asyncio.Event()
         self._audio_buffer: list[bytes] = []
         self._audio_buffer_bytes = 0
-        self._pending_tasks: set[asyncio.Task] = set()
+        self._pending_tasks: set[asyncio.Task[None]] = set()
 
         config = get_config()
         self._endpointing_secs = config.voice.get("endpointing_ms", 500) / 1000.0
@@ -181,7 +181,7 @@ class VoiceSession:
         self._processing_lock = asyncio.Lock()
         self._current_source: PCMStreamSource | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._health_task: asyncio.Task | None = None
+        self._health_task: asyncio.Task[None] | None = None
         self._last_frame_time: float = 0.0
         self._last_listener_restart: float = 0.0
         self._listener_generation: int = 0
@@ -190,8 +190,9 @@ class VoiceSession:
         self._context_builder = ContextBuilder()
         self._llm_client = LLMClient()
         self._user_state = UserState()
+        self._ding_pcm = generate_ding()
 
-    async def join(self, channel: discord.VoiceChannel) -> None:
+    async def join(self, channel: discord.VoiceChannel | discord.StageChannel) -> None:
         """Connect to a voice channel and start listening."""
         self._loop = asyncio.get_running_loop()
         self.voice_client = await channel.connect(cls=VoiceRecvClient)
@@ -212,7 +213,10 @@ class VoiceSession:
         generation = self._listener_generation
         self._last_listener_restart = time.monotonic()
 
-        def on_audio(user: discord.User | None, data: discord.ext.voice_recv.VoiceData) -> None:
+        def on_audio(
+            user: discord.Member | discord.User | None,
+            data: discord.ext.voice_recv.VoiceData,
+        ) -> None:
             if generation != self._listener_generation:
                 return
             if user is None or user.bot:
@@ -222,6 +226,7 @@ class VoiceSession:
             if self._frame_count % 50 == 1:
                 logger.info("Voice frame %d from %s (%d bytes)", self._frame_count, user, len(data.pcm))
             # BasicSink callback runs in a thread — schedule coroutine on event loop
+            assert self._loop is not None
             asyncio.run_coroutine_threadsafe(
                 self._on_audio_frame(user, data.pcm), self._loop,
             )
@@ -273,7 +278,7 @@ class VoiceSession:
         self._voice_ws_fingerprint = None
         logger.info("Left voice channel (guild: %s)", self.guild.name)
 
-    async def _on_audio_frame(self, user: discord.User, pcm_data: bytes) -> None:
+    async def _on_audio_frame(self, user: discord.Member | discord.User, pcm_data: bytes) -> None:
         """Route incoming audio to the correct user stream."""
         user_id = user.id
         if user_id not in self._user_streams:
@@ -311,8 +316,32 @@ class VoiceSession:
         async with self._processing_lock:
             await self._process_voice_turn(user, text)
 
+    async def _play_ding(self) -> None:
+        """Play a short ding sound to acknowledge STT commit."""
+        if not self.voice_client or not self.voice_client.is_connected():
+            return
+        if self.voice_client.is_playing():
+            self.voice_client.stop()
+
+        source = PCMStreamSource()
+        source.feed(self._ding_pcm)
+        source.finish()
+
+        done = asyncio.Event()
+
+        def after(error: Exception | None) -> None:
+            if error:
+                logger.error("Ding playback error: %s", error)
+            if self._loop:
+                self._loop.call_soon_threadsafe(done.set)
+
+        self.voice_client.play(source, after=after)
+        await done.wait()
+
     async def _process_voice_turn(self, user: discord.Member, text: str) -> None:
         """Build context → LLM → strip tags → stream TTS → play."""
+        await self._play_ding()
+
         user_id = user.id
         user_name = user.display_name
         user_message = format_user_message(user_name, f"[Voice channel: {text}]")
@@ -553,7 +582,7 @@ class VoiceSessionManager:
     def __init__(self) -> None:
         self._sessions: dict[int, VoiceSession] = {}
 
-    async def join(self, channel: discord.VoiceChannel) -> VoiceSession:
+    async def join(self, channel: discord.VoiceChannel | discord.StageChannel) -> VoiceSession:
         """Create or reuse a voice session for the channel's guild."""
         guild_id = channel.guild.id
         if guild_id in self._sessions:

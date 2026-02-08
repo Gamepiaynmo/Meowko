@@ -18,7 +18,7 @@ class JSONLStore:
         if data_dir is None:
             data_dir = config.data_dir
         self.data_dir = data_dir
-        self.conversations_dir = data_dir / config.paths["conversations_dir"]
+        self.conversations_dir: Path = data_dir / config.paths["conversations_dir"]
 
     def _get_file_path(
         self,
@@ -97,11 +97,11 @@ class JSONLStore:
             if d.is_dir() and d.name != "archive"
         )
 
-    def read_file(self, file_path: Path) -> list[dict]:
+    def read_file(self, file_path: Path) -> list[dict[str, Any]]:
         """Read events from a specific JSONL file."""
         if not file_path.exists():
             return []
-        events = []
+        events: list[dict[str, Any]] = []
         with open(file_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -109,7 +109,7 @@ class JSONLStore:
                     events.append(json.loads(line))
         return events
 
-    def read_date(self, persona_id: str, user_id: int, date: datetime) -> list[dict]:
+    def read_date(self, persona_id: str, user_id: int, date: datetime) -> list[dict[str, Any]]:
         """Read events for a specific date."""
         scope_id = f"{persona_id}-{user_id}"
         date_str = date.strftime("%Y-%m-%d")
