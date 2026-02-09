@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.core.memory_manager import MemoryManager, estimate_tokens, _season_index
+from src.core.memory_manager import MemoryManager, estimate_tokens, _season_index, _stem_to_date_range
 
 
 class TestEstimateTokens:
@@ -98,6 +98,45 @@ class TestMemoryPaths:
         assert p.name == "year-2025.md"
 
 
+class TestStemToDateRange:
+    def test_day(self):
+        assert _stem_to_date_range("day-2025-03-15") == "2025-03-15"
+
+    def test_week(self):
+        # ISO week 11 of 2025: Monday 2025-03-10 to Sunday 2025-03-16
+        result = _stem_to_date_range("week-2025-03-11")
+        assert result == "2025-03-10 to 2025-03-16"
+
+    def test_week_cross_month(self):
+        # ISO week 1 of 2025: Monday 2024-12-30 to Sunday 2025-01-05
+        result = _stem_to_date_range("week-2025-01-01")
+        assert result == "2024-12-30 to 2025-01-05"
+
+    def test_month(self):
+        assert _stem_to_date_range("month-2025-02") == "2025-02-01 to 2025-02-28"
+
+    def test_month_leap_year(self):
+        assert _stem_to_date_range("month-2024-02") == "2024-02-01 to 2024-02-29"
+
+    def test_season_q1(self):
+        assert _stem_to_date_range("season-2025-01") == "2025-01-01 to 2025-03-31"
+
+    def test_season_q2(self):
+        assert _stem_to_date_range("season-2025-02") == "2025-04-01 to 2025-06-30"
+
+    def test_season_q3(self):
+        assert _stem_to_date_range("season-2025-03") == "2025-07-01 to 2025-09-30"
+
+    def test_season_q4(self):
+        assert _stem_to_date_range("season-2025-04") == "2025-10-01 to 2025-12-31"
+
+    def test_year(self):
+        assert _stem_to_date_range("year-2025") == "2025-01-01 to 2025-12-31"
+
+    def test_unknown_tier_returns_stem(self):
+        assert _stem_to_date_range("unknown-thing") == "unknown-thing"
+
+
 class TestReadAllMemories:
     def test_empty_scope(self, config_file):
         mm = MemoryManager()
@@ -108,7 +147,6 @@ class TestReadAllMemories:
         scope_dir = mm._scope_dir("test-1")
         scope_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create files in reverse order to test sorting
         (scope_dir / "day-2025-03-15.md").write_text("daily note", encoding="utf-8")
         (scope_dir / "month-2025-03.md").write_text("monthly note", encoding="utf-8")
         (scope_dir / "year-2025.md").write_text("yearly note", encoding="utf-8")
@@ -116,9 +154,9 @@ class TestReadAllMemories:
         result = mm.read_all_memories("test-1")
         # year < month < day
         lines = result.split("\n\n")
-        assert "year-2025" in lines[0]
-        assert "month-2025-03" in lines[1]
-        assert "day-2025-03-15" in lines[2]
+        assert "2025-01-01 to 2025-12-31" in lines[0]
+        assert "2025-03-01 to 2025-03-31" in lines[1]
+        assert "2025-03-15" in lines[2]
 
     def test_skips_empty_files(self, config_file):
         mm = MemoryManager()

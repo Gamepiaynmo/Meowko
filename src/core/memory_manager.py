@@ -1,5 +1,6 @@
 """Memory management - hierarchical markdown rollups (daily/weekly/monthly/seasonal/yearly)."""
 
+import calendar
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -25,6 +26,46 @@ def estimate_tokens(text: str) -> int:
 def _season_index(month: int) -> int:
     """Return 1-based season index for a month (1=winter, 2=spring, 3=summer, 4=fall)."""
     return (month - 1) // 3 + 1
+
+
+def _stem_to_date_range(stem: str) -> str:
+    """Convert a memory filename stem to a human-readable date range."""
+    tier, _, rest = stem.partition("-")
+
+    if tier == "day":
+        # day-YYYY-MM-DD
+        return rest
+
+    if tier == "week":
+        # week-YYYY-MM-WW -> ISO week range
+        parts = rest.rsplit("-", 1)
+        year = int(parts[0][:4])
+        week = int(parts[1])
+        monday = datetime.strptime(f"{year}-W{week:02d}-1", "%G-W%V-%u").date()
+        sunday = monday + timedelta(days=6)
+        return f"{monday.isoformat()} to {sunday.isoformat()}"
+
+    if tier == "month":
+        # month-YYYY-MM
+        parts = rest.split("-")
+        year, month = int(parts[0]), int(parts[1])
+        last_day = calendar.monthrange(year, month)[1]
+        return f"{year}-{month:02d}-01 to {year}-{month:02d}-{last_day:02d}"
+
+    if tier == "season":
+        # season-YYYY-QQ (01=Jan-Mar, 02=Apr-Jun, 03=Jul-Sep, 04=Oct-Dec)
+        parts = rest.split("-")
+        year, idx = int(parts[0]), int(parts[1])
+        start_month = (idx - 1) * 3 + 1
+        end_month = start_month + 2
+        last_day = calendar.monthrange(year, end_month)[1]
+        return f"{year}-{start_month:02d}-01 to {year}-{end_month:02d}-{last_day:02d}"
+
+    if tier == "year":
+        # year-YYYY
+        return f"{rest}-01-01 to {rest}-12-31"
+
+    return stem
 
 
 class MemoryManager:
@@ -80,8 +121,8 @@ class MemoryManager:
         prompt = (
             "将以下对话总结为简洁的要点，使用 Markdown 列表格式。"
             "重点关注讨论的话题、做出的决定、情感时刻、透露的个人信息以及任何承诺或计划。"
-            "将列表放在 [memory] ... [/memory] 标签内。"
-            "只输出标签和要点，不要加标题或其他文字。"
+            "以助理（Assistant）为第一人称叙述。"
+            "只输出标签和要点，不要加标题或其他文字。将列表放在 [memory] ... [/memory] 标签内。"
         )
         if existing_summary:
             prompt += (
@@ -106,8 +147,8 @@ class MemoryManager:
                 "content": (
                     "将以下多段记忆笔记合并为一份精炼的总结，使用 Markdown 列表格式。"
                     "去除重复内容，合并相关要点，保留最重要的信息。"
-                    "将列表放在 [memory] ... [/memory] 标签内。"
-                    "只输出标签和要点，不要加标题或其他文字。"
+                    "以助理（Assistant）为第一人称叙述。"
+                    "只输出标签和要点，不要加标题或其他文字。将列表放在 [memory] ... [/memory] 标签内。"
                 ),
             },
             {"role": "user", "content": combined},
@@ -167,7 +208,7 @@ class MemoryManager:
         for f in files:
             text = f.read_text(encoding="utf-8").strip()
             if text:
-                parts.append(f"## {f.stem}\n{text}")
+                parts.append(f"## {_stem_to_date_range(f.stem)}\n{text}")
         return "\n\n".join(parts)
 
     # ── Daily memory creation ──────────────────────────────────────
