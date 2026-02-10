@@ -1,11 +1,19 @@
 """Fish Audio TTS providers."""
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterable, Callable, Coroutine
 from typing import Any
 
+import ormsgpack
 from fishaudio import AsyncFishAudio  # type: ignore[import-untyped]
+from fishaudio.resources.realtime import aiter_websocket_audio  # type: ignore[import-untyped]
+from fishaudio.resources.tts import _config_to_tts_request, _normalize_to_event  # type: ignore[import-untyped]
 from fishaudio.types import TTSConfig  # type: ignore[import-untyped]
+from fishaudio.types import CloseEvent, Prosody, StartEvent  # type: ignore[import-untyped]
+from httpx_ws import aconnect_ws  # type: ignore[import-untyped]
+from wsproto.utilities import LocalProtocolError
 
 from src.config import get_config
 from src.media.audio import AudioResampler
@@ -102,8 +110,8 @@ class FishAudioStreamingTTS:
         total_bytes = 0
         leftover = b""
 
-        async for chunk in self._client.tts.stream_websocket(
-            text_stream,
+        async for chunk in self._stream_websocket_safe(
+            text_stream=text_stream,
             reference_id=voice or None,
             format="pcm",
             latency=cfg["latency"],
@@ -129,3 +137,54 @@ class FishAudioStreamingTTS:
             total_bytes += len(resampled)
 
         logger.info("Streaming TTS completed: %d bytes (48kHz)", total_bytes)
+
+    async def _stream_websocket_safe(
+        self,
+        text_stream: AsyncIterable[str],
+        reference_id: str | None,
+        format: str,
+        latency: str,
+        speed: float | None,
+        config: TTSConfig,
+    ) -> AsyncIterable[bytes]:
+        """Like SDK stream_websocket(), but always consumes sender task exceptions."""
+        tts_request = _config_to_tts_request(config, text="")
+        tts_request.reference_id = reference_id
+        tts_request.format = format
+        tts_request.latency = latency
+        if speed is not None:
+            tts_request.prosody = Prosody.from_speed_override(speed, base=config.prosody)
+
+        tts_client = self._client.tts._client
+        ws_headers = tts_client.get_headers({"model": "s1"})
+
+        async with aconnect_ws(
+            "/v1/tts/live",
+            client=tts_client.client,
+            headers=ws_headers,
+        ) as ws:
+            async def sender() -> None:
+                await ws.send_bytes(ormsgpack.packb(StartEvent(request=tts_request).model_dump()))
+                async for item in text_stream:
+                    event = _normalize_to_event(item)
+                    await ws.send_bytes(ormsgpack.packb(event.model_dump()))
+                await ws.send_bytes(ormsgpack.packb(CloseEvent().model_dump()))
+
+            sender_task = asyncio.create_task(sender())
+            sender_exc: Exception | None = None
+            try:
+                async for audio_chunk in aiter_websocket_audio(ws):
+                    yield audio_chunk
+            finally:
+                if not sender_task.done():
+                    sender_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await sender_task
+                if sender_task.done():
+                    with contextlib.suppress(asyncio.CancelledError):
+                        sender_exc = sender_task.exception()
+                if (
+                    sender_exc
+                    and not isinstance(sender_exc, LocalProtocolError)
+                ):
+                    raise sender_exc

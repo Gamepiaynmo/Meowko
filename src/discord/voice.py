@@ -462,8 +462,24 @@ class VoiceSession:
         # Stream TTS and play concurrently with LLM generation
         pcm_data = await self._stream_tts_and_play(stripped_tokens(), voice_id)
 
-        # LLM stream is now fully consumed — get response stats
+        # TTS may fail early; drain remaining LLM tokens so response stats are populated.
+        if llm_stream.response is None:
+            try:
+                async for _ in llm_stream:
+                    pass
+            except Exception:
+                logger.exception("Failed draining LLM stream after TTS error")
+
         llm_response = llm_stream.response
+        if llm_response is None:
+            # Last-resort fallback: run non-streaming completion so the turn is not lost.
+            try:
+                llm_response = await self._llm_client.chat(context)
+                logger.warning("Recovered voice turn with non-streaming LLM fallback")
+            except Exception:
+                logger.exception("LLM fallback failed after TTS stream error")
+
+        # LLM stream is now fully consumed — get response stats
         if llm_response is None:
             logger.warning("LLM stream ended without response")
             return
