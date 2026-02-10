@@ -6,8 +6,9 @@ Data flow:
     → AudioResampler.discord_to_stt() (48kHz stereo → 48kHz mono)
     → SonioxStreamingSTT WebSocket (client-side silence → end stream)
     → committed transcript
-    → ContextBuilder.build_context() + LLMClient.chat() (non-streaming)
-    → ElevenLabsStreamingTTS REST stream (pcm_48000)
+    → LLMClient.chat_stream() (streaming tokens)
+    → _TagStripper (incremental tag removal)
+    → FishAudioStreamingTTS WebSocket (44.1kHz PCM → resample → 48kHz)
     → AudioResampler.tts_to_discord() (48kHz mono → 48kHz stereo)
     → PCMStreamSource buffer → VoiceClient.play()
 """
@@ -16,6 +17,7 @@ import asyncio
 import logging
 import re
 import time
+from collections.abc import AsyncIterable
 
 import discord
 from discord.ext.voice_recv import BasicSink, VoiceRecvClient
@@ -25,15 +27,91 @@ from src.core.context_builder import ContextBuilder
 from src.core.user_state import UserState
 from src.discord.handlers import format_user_message
 from src.media.audio import AudioResampler, PCMStreamSource, generate_ding
-from src.providers.elevenlabs import ElevenLabsStreamingTTS
+from src.providers.fish_audio import FishAudioStreamingTTS
 from src.providers.soniox import SonioxStreamingSTT
 from src.providers.llm_client import LLMClient
 
 logger = logging.getLogger("meowko.discord.voice")
 
-# Tag patterns for stripping LLM output for voice
+# Tag patterns for stripping LLM output for voice (used for text channel echo)
 _TTI_BLOCK_RE = re.compile(r"\[tti\].*?\[/tti\]", re.DOTALL)
 _TTS_TAG_RE = re.compile(r"\[/?tts\]")
+
+# Tags the incremental stripper recognises
+_KNOWN_TAGS = {"[tti]", "[/tti]", "[tts]", "[/tts]"}
+_MAX_TAG_LEN = 6  # len("[/tti]")
+
+
+class _TagStripper:
+    """Incremental filter that strips [tts]/[/tts] tags and suppresses [tti]...[/tti] blocks.
+
+    Feed LLM tokens one by one; the returned string is safe to forward to TTS.
+    """
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._in_tti = False
+
+    def feed(self, token: str) -> str:
+        self._buf += token
+        return self._drain()
+
+    def flush(self) -> str:
+        """Return any remaining buffered text (call at end of stream)."""
+        result = "" if self._in_tti else self._buf
+        self._buf = ""
+        return result
+
+    def _drain(self) -> str:
+        out: list[str] = []
+        while self._buf:
+            if self._in_tti:
+                idx = self._buf.find("[/tti]")
+                if idx >= 0:
+                    self._buf = self._buf[idx + 6:]
+                    self._in_tti = False
+                    continue
+                # Keep last (_MAX_TAG_LEN - 1) chars for partial closing-tag match
+                keep = _MAX_TAG_LEN - 1
+                if len(self._buf) > keep:
+                    self._buf = self._buf[-keep:]
+                break
+
+            bracket = self._buf.find("[")
+            if bracket < 0:
+                out.append(self._buf)
+                self._buf = ""
+                break
+
+            if bracket > 0:
+                out.append(self._buf[:bracket])
+                self._buf = self._buf[bracket:]
+
+            # Buffer starts with "["
+            if self._buf.startswith("[tti]"):
+                self._in_tti = True
+                self._buf = self._buf[5:]
+                continue
+            if self._buf.startswith("[tts]"):
+                self._buf = self._buf[5:]
+                continue
+            if self._buf.startswith("[/tts]"):
+                self._buf = self._buf[6:]
+                continue
+            if self._buf.startswith("[/tti]"):
+                # Orphaned closing tag — skip
+                self._buf = self._buf[6:]
+                continue
+
+            # Could still be the start of a known tag — wait for more input
+            if any(tag.startswith(self._buf) for tag in _KNOWN_TAGS):
+                break
+
+            # Not a recognised tag — emit the "[" and continue
+            out.append("[")
+            self._buf = self._buf[1:]
+
+        return "".join(out)
 
 
 class UserAudioStream:
@@ -339,7 +417,12 @@ class VoiceSession:
         await done.wait()
 
     async def _process_voice_turn(self, user: discord.Member, text: str) -> None:
-        """Build context → LLM → strip tags → stream TTS → play."""
+        """Build context → stream LLM → strip tags → stream TTS → play.
+
+        LLM tokens are piped through a tag stripper directly into the Fish Audio
+        WebSocket TTS, so audio generation begins as soon as the first tokens
+        arrive rather than waiting for the full LLM response.
+        """
         await self._play_ding()
 
         user_id = user.id
@@ -351,7 +434,7 @@ class VoiceSession:
         persona = self._context_builder.load_persona(persona_id)
         voice_id: str | None = persona["voice_id"]
 
-        # Build context and call LLM
+        # Build context and start streaming LLM
         context = await self._context_builder.build_context(
             user_id=user_id,
             persona_id=persona_id,
@@ -359,29 +442,44 @@ class VoiceSession:
         context.append({"role": "user", "content": user_message})
 
         try:
-            llm_response = await self._llm_client.chat(context)
+            llm_stream = await self._llm_client.chat_stream(context)
         except Exception:
             logger.exception("LLM error during voice turn")
+            return
+
+        # Pipe LLM tokens through tag stripper → TTS WebSocket
+        stripper = _TagStripper()
+
+        async def stripped_tokens() -> AsyncIterable[str]:
+            async for token in llm_stream:
+                clean = stripper.feed(token)
+                if clean:
+                    yield clean
+            remaining = stripper.flush()
+            if remaining:
+                yield remaining
+
+        # Stream TTS and play concurrently with LLM generation
+        pcm_data = await self._stream_tts_and_play(stripped_tokens(), voice_id)
+
+        # LLM stream is now fully consumed — get response stats
+        llm_response = llm_stream.response
+        if llm_response is None:
+            logger.warning("LLM stream ended without response")
             return
 
         raw_reply = llm_response.content
         logger.info("Voice LLM reply: %s", raw_reply[:100])
 
-        # Strip tags for voice output
+        # Send full text to the voice channel's text chat
         voice_text = self._strip_tags(raw_reply)
-        if not voice_text.strip():
-            logger.warning("Voice text empty after stripping tags, skipping TTS")
-            return
-
-        # Send the text to the voice channel's text chat
-        if self.voice_client and self.voice_client.channel:
+        if voice_text.strip() and self.voice_client and self.voice_client.channel:
             try:
                 await self.voice_client.channel.send(voice_text)
             except Exception:
                 logger.exception("Failed to send text to voice channel")
 
-        # Stream TTS and play, then cache the audio
-        pcm_data = await self._stream_tts_and_play(voice_text, voice_id)
+        # Cache audio
         assistant_attachments: list[dict[str, str]] | None = None
         if pcm_data:
             wav_data = AudioResampler.pcm_to_wav(pcm_data)
@@ -404,7 +502,11 @@ class VoiceSession:
             assistant_attachments=assistant_attachments,
         )
 
-    async def _stream_tts_and_play(self, text: str, voice_id: str | None = None) -> bytes | None:
+    async def _stream_tts_and_play(
+        self,
+        text_stream: AsyncIterable[str],
+        voice_id: str | None = None,
+    ) -> bytes | None:
         """Create PCMStreamSource, start playback, feed TTS audio, wait for finish.
 
         Returns the raw 48kHz mono PCM audio data for caching, or None on failure.
@@ -426,7 +528,7 @@ class VoiceSession:
             pcm_48k_stereo = AudioResampler.tts_to_discord(pcm_48k)
             source.feed(pcm_48k_stereo)
 
-        tts = ElevenLabsStreamingTTS(on_audio=on_audio)
+        tts = FishAudioStreamingTTS(on_audio=on_audio)
 
         # Start playback immediately — PCMStreamSource returns silence on underrun
         playback_done = asyncio.Event()
@@ -441,7 +543,7 @@ class VoiceSession:
 
         # Stream TTS audio into the source concurrently with playback
         try:
-            await tts.synthesize_streaming(text, voice_id=voice_id)
+            await tts.synthesize_streaming(text_stream, voice_id=voice_id)
         except Exception as e:
             logger.error("Streaming TTS error: %r", e)
         finally:

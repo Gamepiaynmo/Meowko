@@ -76,19 +76,13 @@ soniox:
   streaming_model: "stt-rt-preview"   # Realtime STT model
   # language_hints: ["en"]  # Optional: auto-detected if empty
 
-# ElevenLabs Settings (TTS only)
-elevenlabs:
-  api_key: "your-api-key-here"
-  default_voice_id: "21m00Tcm4TlvDq8ikWAM"  # Rachel
-  model_id: "eleven_turbo_v2_5"
-  # language: "en"  # Optional: auto-detected if empty
+# Fish Audio Settings (TTS only)
+fish_audio:
+  api_key: "your-fish-audio-api-key-here"
+  default_voice_id: ""  # reference_id from fish.audio
   timeout: 120
-  voice_settings:
-    stability: 0
-    similarity_boost: 0.5
-    style: 0
-    use_speaker_boost: true
-    speed: 1.2
+  latency: "balanced"  # "balanced" (faster) or "normal" (higher quality)
+  speed: 1.0           # 0.5–2.0
 
 # Context Settings
 context:

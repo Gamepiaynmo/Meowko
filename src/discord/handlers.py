@@ -13,7 +13,7 @@ from src.config import get_config
 from src.core.jsonl_store import _config_now
 from src.core.context_builder import ContextBuilder
 from src.core.user_state import UserState
-from src.providers.elevenlabs import ElevenLabsTTS
+from src.providers.fish_audio import FishAudioTTS
 from src.providers.soniox import SonioxSTT
 from src.providers.llm_client import LLMClient, LLMResponse
 from src.providers.image_gen import ImageGenClient
@@ -58,7 +58,7 @@ class MessageHandler:
         self.context_builder = ContextBuilder()
         self.llm_client = LLMClient()
         self.stt = SonioxSTT()
-        self.tts = ElevenLabsTTS()
+        self.tts = FishAudioTTS()
         self.user_state = UserState()
         self._tti: ImageGenClient | None = None
         self._tti_init = False

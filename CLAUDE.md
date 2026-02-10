@@ -50,7 +50,7 @@ src/
   media/
     audio.py           — PCM resampling, buffered audio source for playback
   providers/
-    elevenlabs.py      — ElevenLabs TTS (batch + streaming)
+    fish_audio.py      — Fish Audio TTS (batch + streaming)
     soniox.py          — Soniox STT (batch REST + streaming WebSocket)
     llm_client.py      — OpenAI-compatible chat completions client
     image_gen.py       — Text-to-image generation
@@ -63,7 +63,7 @@ pyproject.toml         — Project metadata, dependencies, tool config
 
 - **Config** is a singleton (`Config()` / `get_config()`). Provider/model resolution uses `providers` list in config.yaml with `provider/model` format strings.
 - **LLM responses** can contain `[tts]...[/tts]` and `[tti]...[/tti]` blocks. `MessageHandler._build_segments` parses these and generates media in parallel.
-- **Voice pipeline**: Discord audio (48kHz stereo) → `AudioResampler.discord_to_stt` (mono) → `SonioxStreamingSTT` (WebSocket) → LLM → `ElevenLabsStreamingTTS` → `AudioResampler.tts_to_discord` (stereo) → `PCMStreamSource` playback.
+- **Voice pipeline**: Discord audio (48kHz stereo) → `AudioResampler.discord_to_stt` (mono) → `SonioxStreamingSTT` (WebSocket) → LLM → `FishAudioStreamingTTS` → `AudioResampler.tts_to_discord` (stereo) → `PCMStreamSource` playback.
 - **Memory system**: Daily JSONL conversations are rolled up into markdown summaries by `MemoryManager`. `Scheduler` triggers daily rollups at `memory.rollup_time`. Context compaction happens when token count exceeds `context.compaction_threshold * context_window`.
 
 ## Code style

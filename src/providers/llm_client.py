@@ -32,6 +32,52 @@ class LLMResponse:
         self.cost = cost
 
 
+class LLMStream:
+    """Streaming LLM response — async-iterate for tokens, then read .response."""
+
+    def __init__(self, stream: Any, client: "LLMClient") -> None:
+        self._gen = self._iterate(stream, client)
+        self.response: LLMResponse | None = None
+
+    def __aiter__(self) -> Any:
+        return self._gen
+
+    async def _iterate(self, stream: Any, client: "LLMClient") -> Any:
+        parts: list[str] = []
+        usage = None
+        async for chunk in stream:
+            if chunk.usage:
+                usage = chunk.usage
+            if chunk.choices and chunk.choices[0].delta.content:
+                token = chunk.choices[0].delta.content
+                parts.append(token)
+                yield token
+
+        content = "".join(parts)
+        prompt_tokens = usage.prompt_tokens if usage else 0
+        completion_tokens = usage.completion_tokens if usage else 0
+        total_tokens = usage.total_tokens if usage else 0
+        cached_tokens = 0
+        if usage and hasattr(usage, "prompt_tokens_details") and usage.prompt_tokens_details:
+            cached_tokens = getattr(usage.prompt_tokens_details, "cached_tokens", 0) or 0
+
+        non_cached = prompt_tokens - cached_tokens
+        cost = (
+            (cached_tokens / 1_000_000) * client.cached_price
+            + (non_cached / 1_000_000) * client.input_price
+            + (completion_tokens / 1_000_000) * client.output_price
+        )
+
+        self.response = LLMResponse(
+            content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cached_tokens=cached_tokens,
+            cost=cost,
+        )
+
+
 class LLMClient:
     """OpenAI-compatible LLM client for chat completions."""
 
@@ -113,6 +159,29 @@ class LLMClient:
             cached_tokens=cached_tokens,
             cost=total_cost,
         )
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.7,
+    ) -> LLMStream:
+        """Start a streaming chat completion.
+
+        Returns an LLMStream that yields tokens as they arrive.
+        After iteration completes, access .response for usage stats.
+        """
+        self._save_request(messages, temperature)
+
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,  # type: ignore[arg-type]
+            max_tokens=self.max_tokens,
+            temperature=temperature,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        return LLMStream(stream, self)
 
     def _save_request(
         self,

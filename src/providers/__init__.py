@@ -1,1 +1,1 @@
-"""External service providers - LLM, ElevenLabs, Soniox."""
+"""External service providers - LLM, Fish Audio, Soniox."""

@@ -36,13 +36,12 @@ DEFAULTS: dict[str, Any] = {
         "quality": "",  # e.g. "auto", "hd" (omitted if empty)
         "timeout": 120,
     },
-    "elevenlabs": {
+    "fish_audio": {
         "api_key": "",
-        "default_voice_id": "21m00Tcm4TlvDq8ikWAM",
-        "model_id": "eleven_turbo_v2_5",
-        "language": "zh",
+        "default_voice_id": "",
         "timeout": 120,
-        "voice_settings": {},
+        "latency": "balanced",
+        "speed": 1.0,
     },
     "soniox": {
         "api_key": "",
@@ -243,8 +242,8 @@ class Config:
         return self._get_with_defaults("tti")
 
     @property
-    def elevenlabs(self) -> dict[str, Any]:
-        return self._get_with_defaults("elevenlabs")
+    def fish_audio(self) -> dict[str, Any]:
+        return self._get_with_defaults("fish_audio")
 
     @property
     def soniox(self) -> dict[str, Any]:

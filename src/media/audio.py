@@ -28,6 +28,28 @@ class AudioResampler:
         return mono.tobytes()
 
     @staticmethod
+    def resample_mono(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
+        """Resample mono 16-bit PCM between sample rates via linear interpolation."""
+        if src_rate == dst_rate:
+            return pcm
+        src = array("h", pcm)
+        src_len = len(src)
+        if src_len == 0:
+            return b""
+        ratio = src_rate / dst_rate
+        dst_len = int(src_len / ratio)
+        dst = array("h", [0] * dst_len)
+        for i in range(dst_len):
+            pos = i * ratio
+            idx = int(pos)
+            frac = pos - idx
+            if idx + 1 < src_len:
+                dst[i] = int(src[idx] * (1 - frac) + src[idx + 1] * frac)
+            else:
+                dst[i] = src[min(idx, src_len - 1)]
+        return dst.tobytes()
+
+    @staticmethod
     def tts_to_discord(pcm_48k_mono: bytes) -> bytes:
         """Convert TTS audio to Discord format.
 
