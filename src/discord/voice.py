@@ -606,18 +606,23 @@ class VoiceSession:
         if not vc or not vc.is_connected():
             return
 
-        # If Discord rolled the voice WS/session, recreate the reader to avoid
-        # lingering decrypt state from the previous socket/key.
+        # Keep reader decrypt state aligned with the latest voice secret key.
+        # This is cheap and avoids decrypt drift after transient reconnects.
+        self._refresh_reader_key()
+
+        # If Discord rolled the voice WS/session, record it and rely on key
+        # refresh instead of listener restarts. In practice, repeated
+        # stop/listen cycles can leave stale callbacks in some environments,
+        # which then produce noisy CryptoError decrypt logs.
         current_fingerprint = self._capture_voice_ws_fingerprint()
         if self._voice_ws_fingerprint is None:
             self._voice_ws_fingerprint = current_fingerprint
         elif current_fingerprint != self._voice_ws_fingerprint:
             logger.warning(
-                "Voice websocket session changed, restarting listener (guild: %s)",
+                "Voice websocket session changed, refreshed reader key (guild: %s)",
                 self.guild.name,
             )
             self._voice_ws_fingerprint = current_fingerprint
-            self._start_listening()
         else:
             self._voice_ws_fingerprint = current_fingerprint
 

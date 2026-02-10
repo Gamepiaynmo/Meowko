@@ -98,12 +98,19 @@ async def _main() -> None:
     log_file = logs_dir / "meowko.log"
     setup_logging(log_file=log_file, log_level="INFO")
 
-    # Set locale
-    try:
-        locale.setlocale(locale.LC_ALL, config.locale)
-        logger.info(f"Locale set to: {config.locale}")
-    except locale.Error as e:
-        logger.warning(f"Failed to set locale {config.locale}: {e}")
+    # Set locale (cloud images often lack zh_CN.UTF-8 by default)
+    locale_candidates = [config.locale, "C.UTF-8", "C"]
+    locale_set = False
+    for loc in locale_candidates:
+        try:
+            locale.setlocale(locale.LC_ALL, loc)
+            logger.info("Locale set to: %s", loc)
+            locale_set = True
+            break
+        except locale.Error:
+            continue
+    if not locale_set:
+        logger.warning("Failed to set locale from candidates: %s", locale_candidates)
 
     logger.info("Starting Meowko...")
 
