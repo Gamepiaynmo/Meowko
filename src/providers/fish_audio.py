@@ -4,8 +4,8 @@ import logging
 from collections.abc import AsyncIterable, Callable, Coroutine
 from typing import Any
 
-from fishaudio import AsyncFishAudio
-from fishaudio.types import TTSConfig
+from fishaudio import AsyncFishAudio  # type: ignore[import-untyped]
+from fishaudio.types import TTSConfig  # type: ignore[import-untyped]
 
 from src.config import get_config
 from src.media.audio import AudioResampler

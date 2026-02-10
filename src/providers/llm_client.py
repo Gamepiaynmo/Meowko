@@ -172,9 +172,9 @@ class LLMClient:
         """
         self._save_request(messages, temperature)
 
-        stream = await self.client.chat.completions.create(
+        stream = await self.client.chat.completions.create(  # type: ignore[call-overload]
             model=self.model,
-            messages=messages,  # type: ignore[arg-type]
+            messages=messages,
             max_tokens=self.max_tokens,
             temperature=temperature,
             stream=True,
