@@ -560,8 +560,8 @@ class VoiceSession:
         # Stream TTS audio into the source concurrently with playback
         try:
             await tts.synthesize_streaming(text_stream, voice_id=voice_id)
-        except Exception as e:
-            logger.error("Streaming TTS error: %r", e)
+        except Exception:
+            logger.exception("Streaming TTS error")
         finally:
             source.finish()
             await tts.close()
